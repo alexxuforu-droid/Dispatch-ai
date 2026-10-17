@@ -776,6 +776,10 @@ function ProviderSettings({ onReady, onRemoved }: { onReady: () => void; onRemov
       if (!next.model) throw new Error('Enter the model ID your provider supports.');
       if (apiKey.trim()) { await saveProviderSecret('openai-compatible', apiKey); setApiKey(''); setHasSavedKey(true); }
       await saveProviderProfile(next); setProfile(next);
+      // next.endpoint is normalized, so it can differ from what update() last put in the ref
+      // (trailing slash, host case). Without this the next Refresh compares the normalized
+      // endpoint against a stale raw one and silently drops its own response.
+      catalogEndpointRef.current = next.endpoint;
       await testProviderConnection(next);
       refreshModelSuggestions(next.endpoint);
       setStatus('Connected. The provider’s model endpoint responded successfully.');
