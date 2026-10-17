@@ -1118,3 +1118,78 @@ shared module out of `testMatch`.
 
 `4daa471` — 159 tests / 8 suites, tsc exit 0, eslint 0 errors with 45 pre-existing warnings.
 Four judges dispatched: code, test, adversarial-on-the-staleness-change, catalog-boundary.
+
+---
+
+# APPEND 12 — the sandbox lesson, and a self-inflicted outage
+
+## The "sandbox" was not a sandbox
+
+I built a capture tool that launched the GUI app, then moved its window to `-32000`, then
+`PrintWindow`'d it. Off-screen windows are never composited to a monitor, so the user sees
+nothing. I proved that on notepad, then ran it against the real app.
+
+**The user saw the window.** They said so.
+
+The mechanism has an unavoidable race and I should have seen it before running it against
+anything real: the app creates and shows its window *immediately*, and only afterwards can
+my process find the HWND and move it. That gap is where the desktop got hit. Notepad hid
+the flaw because it starts slowly; the app starts fast. The proof case passed and the real
+case failed — the classic shape of a mistake I should have caught by reasoning rather than
+by one lucky sample.
+
+`PrintWindow` then turned out to capture only the XAML chrome. The React content renders on
+a DirectComposition surface and came back pure white — verified by sampling pixels: 2
+distinct colours, every content pixel `#FFFFFF`, against 6 distinct colours for the notepad
+capture. Identical byte size at 25s and 75s settles proved it was not a timing problem.
+
+**Conclusion, and it is the durable part: any GUI app launched in the interactive session
+will touch the user's desktop.** There is no flag, offset or timing trick that avoids it,
+because the window exists on the desktop before any of my code runs. The only genuinely
+isolated option is a VM, and that needs elevation plus a reboot, which is not mine to take.
+So: no more launching. The 320px criterion stays INCOMPLETE and is reported as such.
+
+What survived, none of which needed a visible window:
+- **`react-native@0.84.1` ships no desktop build of `ReactDevToolsSettingsManager`** — only
+  `.android.js`, `.ios.js`, `.js.flow`. Metro 500s on it and the app hangs on its loading bar
+  with nothing in the log. The require is static, so disabling devtools does not avoid it;
+  that was tried first and changed nothing. A resolver alias to the android build fixes it
+  (both exports go through an optional-chained native spec, so they are no-ops off Android).
+  Bundle went from `UnableToResolveError` to 5,626,306 bytes in 5.5s.
+- The packaged app starts; the loose Debug exe dies at startup with `0xC0000409`.
+- WinAppSDK 1.8 was missing from the machine entirely; only 1.4 and 1.5 were installed.
+
+## The outage I caused
+
+`node_modules` ended up with `jest`, `jest-preset.js` and `.bin` deleted — `npx jest` failed
+with "Preset react-native not found". Cause: the research worktrees had `node_modules`
+**junctions** into the main tree so agents could build. Any agent running a package manager
+inside a worktree wrote straight through the junction into the real `node_modules`.
+
+Mitigation, in order:
+1. Removed all four junctions with `cmd /c rmdir`, which unlinks the junction. `Remove-Item
+   -Recurse` on a junction in PowerShell 5.1 **follows it into the target** and would have
+   destroyed the real `node_modules` while appearing to clean up a temp directory.
+2. Repaired with `npm install` against the committed lockfile.
+
+**Rule for next time:** a worktree given to an agent gets no junctioned `node_modules`.
+If an agent needs dependencies, it installs them inside its own worktree where the damage is
+contained, or it does not run a package manager at all. Sharing the dependency tree across
+an isolation boundary defeats the isolation.
+
+## Judge rulings this round
+
+- **Catalog boundary: 9.5 PASS.** All five points HOLD, all five tripwires ABSENT, acid test
+  holds in every variant including a real send. Ruled explicitly that "the LIST is stale" is
+  reportable while "the SAVED ID is stale" is forbidden, and that the rendered string
+  ("It may be out of date — refresh for an accurate list") stays inside that line.
+- **Test judge: 9.1 FAIL**, zero load-bearing but two gaps I had not closed:
+  - My staleness test only proved the *false* direction. Forcing the condition to `true`
+    unconditionally keeps all 159 tests green, so a fresh list could be called out of date
+    and nothing would notice. Asserting that a stale catalog says so is half a contract.
+  - The `catalogCheckedAt === null` copy ("Suggestions appear once the provider model list is
+    fetched.") was rendered by no test; deleting it passes 159/159.
+  - Plus a real defect it verified from source: `update` never recomputed suggestions on an
+    endpoint edit, so chips for the old provider survived while the staleness note read the
+    new endpoint — two endpoints' facts in one sentence. Now fixed by dropping suggestions
+    when the endpoint changes, with tests for all four states.

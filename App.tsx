@@ -748,7 +748,13 @@ function ProviderSettings({ onReady, onRemoved }: { onReady: () => void; onRemov
     }).catch(() => { if (active) setStatus('Secure credential storage is unavailable. No API key has been saved.'); });
     return () => { active = false; };
   }, []);
-  const update = (key: keyof ProviderProfile, value: string) => setProfile(current => ({ ...current, [key]: value }));
+  const update = (key: keyof ProviderProfile, value: string) => {
+    // Suggestions belong to the endpoint that produced them. Editing the endpoint drops them
+    // rather than leaving chips for a provider the user is no longer pointing at, which would
+    // also make the "last checked" note describe a different endpoint than the one on screen.
+    if (key === 'endpoint') { setSuggestedModels([]); setCatalogCheckedAt(null); }
+    setProfile(current => ({ ...current, [key]: value }));
+  };
   const connect = async () => {
     setBusy(true); setStatus('Saving securely and checking the provider…');
     try {

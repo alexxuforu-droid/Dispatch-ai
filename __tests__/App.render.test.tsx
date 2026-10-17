@@ -232,3 +232,97 @@ describe('settings survives an endpoint that is mid-edit', () => {
     await unmount(tree);
   });
 });
+
+// The staleness copy is only useful in both directions. Asserting that a stale catalog says so
+// is half the contract: the other half is that a FRESH catalog never claims to be out of date.
+// Without this, making the condition unconditionally true ships a lie and the suite stays green.
+describe('the catalog note tells the truth in both directions', () => {
+  const ENDPOINT = 'https://api.openai.com/v1';
+
+  async function mountSettings(): Promise<ReactTestRenderer> {
+    return mount(React.createElement(App, { initialScreen: 'settings' }));
+  }
+
+  test('a fresh catalog is not described as out of date', async () => {
+    const { providerModelCatalog } = require('../src/providers/openai-compatible');
+    const { saveCatalogSnapshot, clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    const { saveProviderProfile, defaultProviderProfile } = require('../src/persistence/providerProfile');
+    await clearCatalogSnapshot();
+    providerModelCatalog.forget(ENDPOINT);
+    await saveCatalogSnapshot(ENDPOINT, ['alpha'], Date.now());
+    providerModelCatalog.record(ENDPOINT, ['alpha'], Date.now());
+    await saveProviderProfile({ ...defaultProviderProfile, endpoint: ENDPOINT, model: 'saved-model-id', imageModel: '' });
+
+    const tree = await mountSettings();
+    const rendered = textNodes(tree.toJSON()).join(' \n ');
+
+    expect(rendered).toContain('Model list checked');
+    expect(rendered).not.toContain('may be out of date');
+    // The advisory framing must survive on the fresh path too.
+    expect(rendered).toContain('It only ever offers suggestions');
+    await unmount(tree);
+  });
+
+  test('with no catalog at all the note explains how to get suggestions', async () => {
+    const { providerModelCatalog } = require('../src/providers/openai-compatible');
+    const { clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    await clearCatalogSnapshot();
+    providerModelCatalog.forget(ENDPOINT);
+
+    const tree = await mountSettings();
+    const rendered = textNodes(tree.toJSON()).join(' \n ');
+
+    expect(rendered).toContain('Suggestions appear once the provider model list is fetched');
+    // Free text is always available; the empty state must not imply the field is locked.
+    expect(rendered).toContain('Type any model ID above at any time');
+    expect(rendered).not.toContain('"editable": false');
+    await unmount(tree);
+  });
+
+  test('editing the endpoint drops the previous endpoint suggestions', async () => {
+    const { providerModelCatalog } = require('../src/providers/openai-compatible');
+    const { saveCatalogSnapshot, clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    const { saveProviderProfile, defaultProviderProfile } = require('../src/persistence/providerProfile');
+    await clearCatalogSnapshot();
+    providerModelCatalog.forget(ENDPOINT);
+    providerModelCatalog.record(ENDPOINT, ['alpha', 'beta'], Date.now());
+    await saveCatalogSnapshot(ENDPOINT, ['alpha', 'beta'], Date.now());
+    await saveProviderProfile({ ...defaultProviderProfile, endpoint: ENDPOINT, model: 'saved-model-id', imageModel: '' });
+
+    const tree = await mountSettings();
+    expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Use model alpha');
+
+    const input = findByLabel(tree.toJSON(), 'OpenAI-compatible API endpoint');
+    const onChangeText = input?.props?.onChangeText;
+    await act(async () => {
+      if (typeof onChangeText === 'function') (onChangeText as (next: string) => void)('https://other.example/v1');
+    });
+
+    const after = textNodes(tree.toJSON()).join(' \n ');
+    // Chips for the old provider must not survive: they describe an endpoint no longer in use,
+    // and the "checked" note would otherwise report the wrong endpoint's age.
+    expect(after).not.toContain('Use model alpha');
+    expect(after).not.toContain('Use model beta');
+    expect(after).toContain('Suggestions appear once the provider model list is fetched');
+    // The saved id is untouched by all of this. An input's value is a prop, not text, so it
+    // has to be read off the control rather than scraped from the rendered tree.
+    const modelInput = findByLabel(tree.toJSON(), 'Provider model ID');
+    expect(modelInput?.props?.value).toBe('saved-model-id');
+    await unmount(tree);
+  });
+
+  test('the saved model id is the input value, not merely text on screen', async () => {
+    const { clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    const { saveProviderProfile, defaultProviderProfile } = require('../src/persistence/providerProfile');
+    await clearCatalogSnapshot();
+    await saveProviderProfile({ ...defaultProviderProfile, endpoint: ENDPOINT, model: 'a-model-the-provider-never-listed', imageModel: '' });
+
+    const tree = await mountSettings();
+    const input = findByLabel(tree.toJSON(), 'Provider model ID');
+    expect(input).not.toBeNull();
+    expect(input?.props?.value).toBe('a-model-the-provider-never-listed');
+    expect(input?.props?.disabled).toBeUndefined();
+    expect(input?.props?.editable).toBeUndefined();
+    await unmount(tree);
+  });
+});
