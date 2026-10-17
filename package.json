@@ -1,5 +1,5 @@
 {
-  "name": "DispatchNative",
+  "name": "dispatch-ai-native",
   "version": "0.0.1",
   "private": true,
   "scripts": {
@@ -7,13 +7,19 @@
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "windows": "npx @react-native-community/cli run-windows",
+    "test:windows": "jest --config jest.config.windows.js",
+    "assets:build": "node scripts/render-logo.mjs",
+    "avatars:build": "node scripts/build-agent-avatars.mjs"
   },
   "dependencies": {
-    "react": "19.2.3",
-    "react-native": "0.84.0",
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native/new-app-screen": "0.84.0",
-    "react-native-safe-area-context": "^5.5.2"
+    "react": "19.2.3",
+    "react-native": "^0.84.1",
+    "react-native-safe-area-context": "^5.5.2",
+    "react-native-windows": "^0.84.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -26,6 +32,8 @@
     "@react-native/eslint-config": "0.84.0",
     "@react-native/metro-config": "0.84.0",
     "@react-native/typescript-config": "0.84.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "@rnx-kit/jest-preset": "^0.3.1",
     "@types/jest": "^29.5.13",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.1.0",
@@ -37,5 +45,22 @@
   },
   "engines": {
     "node": ">= 22.11.0"
+  },
+  "react-native-windows": {
+    "init-windows": {
+      "name": "DispatchNative",
+      "namespace": "DispatchNative",
+      "template": "cpp-app"
+    }
+  },
+  "codegenConfig": {
+    "name": "DispatchNativeSpec",
+    "type": "modules",
+    "jsSrcsDir": "src",
+    "windows": {
+      "namespace": "dispatchCodegen",
+      "outputDirectory": "windows/DispatchNative/codegen",
+      "separateDataTypes": true
+    }
   }
 }

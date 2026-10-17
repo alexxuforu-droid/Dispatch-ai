@@ -1,97 +1,40 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Dispatch AI (native rebuild)
 
-# Getting Started
+This directory is a standalone React Native Windows app. It is being rebuilt from a clean project and does not use Dispatch AI v1 source code. Product scope and architecture are described in [PRODUCT.md](./PRODUCT.md).
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Requirements
 
-## Step 1: Start Metro
+- Node.js 22.11 or later
+- Visual Studio 2022 with Desktop development with C++, Universal Windows Platform development, and a Windows 10/11 SDK
+- .NET SDK and NuGet
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Start
 
-To start the Metro dev server, run the following command from the root of your React Native project:
-
-```sh
-# Using npm
+```powershell
+npm install
 npm start
-
-# OR using Yarn
-yarn start
 ```
 
-## Step 2: Build and run your app
+In a second terminal, run the native Windows target:
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+```powershell
+npm run windows
 ```
 
-### iOS
+The logo raster asset is generated from the copied SVG brand asset with:
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+```powershell
+npm run assets:build
 ```
 
-Then, and every time you update your native dependencies, run:
+## Current implementation state
 
-```sh
-bundle exec pod install
-```
+The native UI shell, persistent local team-role selection, per-role chat model overrides, review preferences, provider profile form, Windows Credential Manager integration, provider-backed task planner, saved plan review with editable step titles and explicit start approval, parallel agents with directed handoffs, code proposal review, generated PNG artifacts, model-based visual review, run cancellation, run history, and interrupted-run snapshot recovery are in place. Each role's model ID uses the configured OpenAI-compatible endpoint, and a plan snapshots those choices. Code and image reviews can request up to two revisions before a result is held for the person. Cancelled, failed, and human-gated runs can resume unfinished steps. Image generation requires an image model configured for the selected compatible endpoint; automatic visual review requires the chat model to accept image input. Either unsupported path remains human-gated. The native project browser can preview UTF-8 text and attach a bounded excerpt to a task. Each agent has independently configurable read, grep, create-file, and exact-edit permissions, all off by default. Tool requests are checked at execution time and constrained to the selected project. Code agents can propose file changes; changes remain staged for the user unless a qualified higher-ranked reviewer approves and applies them. Qualified reviewers must have both code and review capabilities, rank 4 or 5, and outrank the author. The native writer enforces project-relative paths, size limits, create-only new files, and stale-content checks. Windows build/runtime validation is still required. Shell execution, test/build evidence, line-level diffs, and export remain future work.
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Teams can include custom agents with their own instructions and plan/code/image/review capabilities. Create multiple named teams from existing agent profiles, choose the active team for new runs, configure rank and project-tool access in Teams → Hierarchy, and review team-specific run messages in Teams → Team chat. The chat composer sends a task to Dispatch for plan review before it runs. Advanced settings groups provider, project-folder, and review controls. Assign a per-agent model ID and choose an avatar from 199 native-rendered marks in the Dispatch logo pack. Choices persist locally and each run keeps a snapshot of the agent profiles that performed the work. Rebuild the gallery assets from the source pack with `npm run avatars:build`.
 
-```sh
-# Using npm
-npm run ios
+The workspace also includes reusable task workflows, a dependency-aware task board, built-in plugin controls for file tools/image generation/code and vision review, team playbooks, approved per-agent memory, optional multi-agent plan debate, and optional approval checkpoints between dependency waves. Debate notes and workspace tool decisions are recorded in the run conversation. Senior-agent auto-apply can be disabled in Advanced settings. The plugin catalog currently exposes reviewed built-in capabilities; it does not load arbitrary third-party code.
 
-# OR using Yarn
-yarn ios
-```
+The Design Studio provides six design presets, nine selectable design skills, a draggable reference/prompt board with accessible movement controls, text-only 3D prompt recipes, exact change/keep instructions, and an agent brief that includes canvas positions and selected team. Image output and code proposals appear in a live latest-output panel; a design run returns to the studio automatically when it finishes. The recipe library supplies prompts and does not create 3D assets.
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Provider keys are written only through the Windows native Credential Manager module. Endpoint/model configuration and non-secret workspace preferences use React Native Async Storage.

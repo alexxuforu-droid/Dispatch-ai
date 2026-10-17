@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <!-- Native dependency projects must run the Windows CLI from the app root. -->
+    <CodegenCommandWorkingDir Condition="'$(CodegenCommandWorkingDir)' == ''">$(MSBuildThisFileDirectory)</CodegenCommandWorkingDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'ReactNativeAsyncStorage'">
+    <!-- This older module has no Windows App SDK dependencies in packages.config. -->
+    <WindowsAppSDKVerifyTransitiveDependencies>false</WindowsAppSDKVerifyTransitiveDependencies>
+  </PropertyGroup>
+</Project>

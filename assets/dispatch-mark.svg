@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Dispatch AI — capsule headset mark, #14</title>
+  <desc id="desc">The original pale capsule mascot with a dark visor, three dots, a curved smile, over-ear headphones, and radiating lines, rendered with dimensional lighting.</desc>
+  <defs>
+    <radialGradient id="bg14" cx="29%" cy="20%" r="88%">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="20%" stop-color="#FBFBFA"/>
+      <stop offset="52%" stop-color="#ECEBED"/><stop offset="79%" stop-color="#C3C1CA"/>
+      <stop offset="100%" stop-color="#85828F"/>
+    </radialGradient>
+    <linearGradient id="bodySide14" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#888591" stop-opacity=".75"/><stop offset="14%" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="78%" stop-color="#FFFFFF" stop-opacity="0"/><stop offset="100%" stop-color="#625F6C" stop-opacity=".55"/>
+    </linearGradient>
+    <linearGradient id="headband14" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#373640"/><stop offset=".35" stop-color="#17171D"/>
+      <stop offset=".72" stop-color="#090A0D"/><stop offset="1" stop-color="#24232B"/>
+    </linearGradient>
+    <linearGradient id="headbandGlint14" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/><stop offset=".5" stop-color="#C9C8D1" stop-opacity=".52"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="pad14" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset=".28" stop-color="#E5E4E9"/>
+      <stop offset=".72" stop-color="#B8B6C1"/><stop offset="1" stop-color="#85828F"/>
+    </linearGradient>
+    <linearGradient id="visor14" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#373943"/><stop offset=".16" stop-color="#1B1C24"/>
+      <stop offset=".58" stop-color="#0B0C11"/><stop offset="1" stop-color="#030405"/>
+    </linearGradient>
+    <linearGradient id="bead14" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#30313A"/><stop offset=".4" stop-color="#101116"/><stop offset="1" stop-color="#030405"/>
+    </linearGradient>
+    <radialGradient id="ground14" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#000000" stop-opacity=".58"/><stop offset=".62" stop-color="#000000" stop-opacity=".23"/><stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="highlight14" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".42"/><stop offset=".48" stop-color="#FFFFFF" stop-opacity=".16"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="rim14" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".44"/><stop offset=".55" stop-color="#FFFFFF" stop-opacity=".14"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="shade14" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#000000" stop-opacity=".4"/><stop offset=".55" stop-color="#000000" stop-opacity=".11"/><stop offset="1" stop-color="#000000" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow14" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity=".56"/><stop offset=".38" stop-color="#E9EDF8" stop-opacity=".18"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="softShadow14" x="-30%" y="-25%" width="160%" height="170%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="5" result="blur"/><feOffset dy="5" result="offset"/>
+      <feComponentTransfer><feFuncA type="linear" slope=".38"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="dotGlow14" x="-120%" y="-120%" width="340%" height="340%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="2.2"/>
+    </filter>
+    <clipPath id="shellClip14"><rect x="90.56" y="65.68" width="74.88" height="120.64" rx="37.44"/></clipPath>
+    <clipPath id="visorClip14"><rect x="83.28" y="104.16" width="89.44" height="35.36" rx="17.68"/></clipPath>
+  </defs>
+  <rect width="256" height="256" fill="#14161B"/>
+  <ellipse cx="128" cy="228.72" rx="87.36" ry="18.56" fill="url(#ground14)"/>
+  <g fill="none" stroke="#E8E7EC" stroke-width="6" stroke-linecap="round" opacity=".92">
+    <path d="M128 54V37"/><path d="m175.57 71.31 10.92-13.02"/><path d="m200.88 115.15 16.74-2.95"/>
+    <path d="m192.09 165 14.72 8.5"/><path d="m153.31 197.54 5.81 15.97"/><path d="m102.69 197.54-5.81 15.97"/>
+    <path d="m63.91 165-14.72 8.5"/><path d="m55.12 115.15-16.74-2.95"/><path d="m80.43 71.31-10.92-13.02"/>
+  </g>
+<g filter="url(#softShadow14)">
+    <rect x="90.56" y="65.68" width="74.88" height="120.64" rx="37.44" fill="url(#bg14)" stroke="#FFFFFF" stroke-opacity=".48" stroke-width="1.6"/>
+    <rect x="90.56" y="65.68" width="74.88" height="120.64" rx="37.44" fill="url(#bodySide14)"/>
+    <g clip-path="url(#shellClip14)">
+      <ellipse cx="119" cy="101" rx="41" ry="54" fill="url(#glow14)" opacity=".56" transform="rotate(-24 119 101)"/>
+      <ellipse cx="164" cy="137" rx="12" ry="57" fill="url(#shade14)" opacity=".44"/>
+      <path d="M101 77q27-17 54 1" fill="none" stroke="#FFFFFF" stroke-opacity=".68" stroke-width="3.4" stroke-linecap="round"/>
+      <g fill="#FFFFFF" opacity=".12">
+        <circle cx="146.12" cy="162.53" r="2.27"/><circle cx="153.06" cy="129.88" r="2.23"/><circle cx="111.47" cy="93.38" r="1.84"/><circle cx="99.82" cy="117.58" r="1.67"/>
+        <circle cx="168.08" cy="140.04" r="2.3"/><circle cx="101.14" cy="102.53" r="1.56"/><circle cx="124.62" cy="121.65" r="1.38"/><circle cx="104.37" cy="116.3" r="2.34"/>
+        <circle cx="131.26" cy="110.19" r="2.27"/><circle cx="121.54" cy="88.74" r="1.75"/><circle cx="138.97" cy="91.91" r="1.33"/><circle cx="106.33" cy="136.26" r="1.6"/>
+        <circle cx="135.92" cy="127.49" r="1.74"/><circle cx="150.48" cy="128.3" r="2.34"/><circle cx="138.07" cy="98.62" r="1.23"/><circle cx="130.03" cy="121.38" r="1.71"/>
+      </g>
+      <ellipse cx="128" cy="158.24" rx="23.4" ry="19.66" fill="url(#shade14)" opacity=".45"/>
+    </g>
+    <g transform="rotate(-28 107.2 103.12)">
+      <ellipse cx="107.2" cy="103.12" rx="35.36" ry="18.77" fill="url(#highlight14)" opacity=".68"/>
+      <ellipse cx="103.87" cy="101.14" rx="13.73" ry="5.53" fill="url(#highlight14)" opacity=".82"/>
+    </g>
+    <ellipse cx="160.24" cy="140.56" rx="15.6" ry="26" fill="url(#rim14)" transform="rotate(-34 128 126)" opacity=".82"/>
+    <rect x="83.28" y="104.16" width="89.44" height="35.36" rx="17.68" fill="url(#visor14)" stroke="#8E91A0" stroke-opacity=".82" stroke-width="2"/>
+    <path d="M94 108q33-8 68 0" fill="none" stroke="#E4E8F2" stroke-opacity=".34" stroke-width="2.3" stroke-linecap="round" clip-path="url(#visorClip14)"/>
+    <g fill="url(#bead14)" stroke="#858895" stroke-opacity=".62" stroke-width="1.2">
+      <circle cx="107.2" cy="120.8" r="9.36"/><circle cx="129.04" cy="120.8" r="9.36"/><circle cx="150.88" cy="120.8" r="9.36"/>
+    </g>
+    <g fill="#FFFFFF" opacity=".44"><circle cx="104.4" cy="117.5" r="2.2"/><circle cx="126.2" cy="117.5" r="2.2"/><circle cx="148.1" cy="117.5" r="2.2"/></g>
+    <path d="M110.84 145.76a17.16 17.16 0 0 0 34.32 0" fill="none" stroke="#17171C" stroke-width="9" stroke-linecap="round"/>
+    <path d="M110.84 145.76a17.16 17.16 0 0 0 34.32 0" fill="none" stroke="#77747F" stroke-opacity=".52" stroke-width="2.2" stroke-linecap="round"/>
+<g fill="none" stroke="url(#headband14)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"><path d="M78.08 120.8a52 52 0 0 1 99.84 0"/></g><path d="M82 117a47 47 0 0 1 92 0" fill="none" stroke="url(#headbandGlint14)" stroke-width="1.6" stroke-linecap="round" opacity=".62"/>
+        <rect x="69.76" y="116.64" width="15.6" height="29.12" rx="7.8" fill="url(#pad14)" stroke="#FFFFFF" stroke-opacity=".64" stroke-width="1.3"/>
+    <rect x="170.64" y="116.64" width="15.6" height="29.12" rx="7.8" fill="url(#pad14)" stroke="#FFFFFF" stroke-opacity=".64" stroke-width="1.3"/>
+    <path d="M73 121v-4a5 5 0 0 1 9 0v18" fill="none" stroke="#FFFFFF" stroke-opacity=".58" stroke-width="2" stroke-linecap="round"/>
+    <path d="M183 121v-4a5 5 0 0 0-9 0v18" fill="none" stroke="#FFFFFF" stroke-opacity=".58" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg>

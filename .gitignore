@@ -73,3 +73,24 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# React Native Windows build output. The windows/ tree is ~1.4 GB, almost all of it
+# generated: a 500 MB pch.pch plus a pdb per module per configuration. Only the native
+# source (cpp/h/vcxproj/wapproj/props/sln) belongs in the repository.
+windows/**/obj/
+windows/**/bin/
+windows/**/AppPackages/
+windows/**/Generated Files/
+windows/**/x64/
+windows/**/ARM64/
+windows/**/Packages/
+*.pdb
+*.pch
+*.ilk
+*.exp
+*.lib
+*.msix
+*.appx
+*.msixbundle
+*.appxbundle
+*.msixupload
