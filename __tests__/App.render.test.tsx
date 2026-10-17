@@ -122,6 +122,39 @@ async function press(tree: ReactTestRenderer, label: string): Promise<void> {
   await act(async () => { handler(); });
 }
 
+// Some controls carry no accessibilityLabel; their accessible name comes from a child Text,
+// which is valid practice and what a screen reader announces. The press handler sits on the
+// ancestor, and toJSON gives no parent links, so find the handler-bearing node whose SUBTREE
+// contains the text.
+function subtreeHasText(node: TreeRoot, text: string): boolean {
+  if (!node) return false;
+  if (typeof node === 'string') return node.trim() === text;
+  if (Array.isArray(node)) return node.some(kid => subtreeHasText(kid, text));
+  if (typeof node.children === 'string' && node.children.trim() === text) return true;
+  return subtreeHasText((node.children ?? null) as TreeRoot, text);
+}
+
+function findPressableByText(node: TreeRoot, text: string): TreeNode | null {
+  if (!node || typeof node === 'string') return null;
+  if (Array.isArray(node)) {
+    for (const kid of node) {
+      const hit = findPressableByText(kid, text);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const handler = node.props?.onClick ?? node.props?.onPress ?? node.props?.onResponderRelease;
+  if (typeof handler === 'function' && subtreeHasText((node.children ?? null) as TreeRoot, text)) return node;
+  return findPressableByText((node.children ?? null) as TreeRoot, text);
+}
+
+async function pressByText(tree: ReactTestRenderer, text: string): Promise<void> {
+  const node = findPressableByText(tree.toJSON(), text);
+  if (!node) throw new Error(`no pressable whose subtree contains ${text} is rendered`);
+  const handler = node.props.onClick ?? node.props.onPress ?? node.props.onResponderRelease;
+  await act(async () => { (handler as () => void)(); });
+}
+
 afterEach(() => { resetAsyncStorageMock(); });
 
 test('an unreadable ledger reports that it could not be read instead of claiming zero usage', async () => {
@@ -325,7 +358,34 @@ describe('the catalog note tells the truth in both directions', () => {
     await unmount(tree);
   });
 
-  // A refresh started for one endpoint must not write its result onto another the user
+  // The save path was entirely undriven: nothing in the suite pressed "Save and test", so a
+// mutation making the model id revert to a catalog suggestion on save passed 178/178. This is
+// the same preference-gate class the catalog suite guards, on the one route it never covered.
+test('Save and test cannot rewrite the saved model id from a catalog suggestion', async () => {
+  const { providerModelCatalog } = require('../src/providers/openai-compatible');
+  const { clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+  const { saveProviderProfile, defaultProviderProfile, loadProviderProfile } = require('../src/persistence/providerProfile');
+  await clearCatalogSnapshot();
+  providerModelCatalog.forget(ENDPOINT);
+  providerModelCatalog.record(ENDPOINT, ['alpha'], Date.now());
+  await saveProviderProfile({ ...defaultProviderProfile, endpoint: ENDPOINT, model: 'a-model-the-provider-never-listed', imageModel: '' });
+
+  (globalThis as { fetch?: unknown }).fetch = jest.fn(async () =>
+    ({ ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) }));
+
+  const tree = await mountSettings();
+  await pressByText(tree, 'Save and test');
+
+  expect(findByLabel(tree.toJSON(), 'Provider model ID')?.props?.value).toBe('a-model-the-provider-never-listed');
+  expect((await loadProviderProfile()).model).toBe('a-model-the-provider-never-listed');
+  await unmount(tree);
+});
+
+// Normalized-endpoint keying is covered as a unit test in catalog.test.ts rather than through
+// the settings screen: the App harness cannot reliably observe post-connect state, and a test
+// that cannot be proven red does not belong here.
+
+// A refresh started for one endpoint must not write its result onto another the user
   // typed while the request was in flight. The window is real: /models is a network call.
   test('an in-flight refresh does not resurrect the previous endpoint suggestions', async () => {
     const { providerModelCatalog } = require('../src/providers/openai-compatible');

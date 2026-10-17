@@ -1,6 +1,8 @@
 import React, { act } from 'react';
 import renderer, { ReactTestRenderer } from 'react-test-renderer';
 
+import { MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT } from '../src/layoutFloor';
+
 // Dev-only tree dumper. Uses require() rather than a node-typed import so the repo stays
 // free of an @types/node dependency just to render a snapshot. No local declaration of
 // `require`: jest hoists mock factories above module scope, so a local shadow would make
@@ -171,11 +173,35 @@ test('capture the dispatch screen at narrow widths', async () => {
   expect(fs.existsSync(path.join(OUT_DIR, 'screen-dispatch-320.json'))).toBe(true);
 }, 60000);
 
-test('no fixed width exceeds the 320px viewport', async () => {
-  // Renderer-independent evidence for the narrow-width requirement. This does not prove the
-  // absence of overflow from flex arithmetic, but it does catch a hard-coded element that
-  // could never fit, which is the failure a screenshot makes easy to misread.
-  setViewport(320, 900);
+// The desktop equivalent of the 320px concern. Windows TextScaleFactor runs 1.0 to 2.25 and
+// React Native applies it to Text unless allowFontScaling is explicitly disabled. This UI
+// declares type as small as 7px, so the question that matters is whether text is still allowed
+// to scale -- if some component opts out, the OS accessibility setting silently does nothing
+// and the dense layout breaks at exactly the users who need it most.
+test('text is never opted out of OS scaling', async () => {
+  const App = require('../App').default;
+  let tree!: ReactTestRenderer;
+  await act(async () => { tree = renderer.create(React.createElement(App, { initialScreen: 'settings' })); });
+  const optedOut: string[] = [];
+  const walk = (node: any, trail: string): void => {
+    if (!node || typeof node === 'string') return;
+    if (Array.isArray(node)) { node.forEach((child: any, i: number) => walk(child, `${trail}[${i}]`)); return; }
+    if (node.props?.allowFontScaling === false) optedOut.push(`${node.type} at ${trail}`);
+    const children = Array.isArray(node.children) ? node.children : [];
+    children.forEach((child: unknown, i: number) => walk(child, `${trail}/${node.type}[${i}]`));
+  };
+  walk(tree.toJSON(), '');
+  expect(optedOut).toEqual([]);
+  await act(async () => { tree.unmount(); });
+}, 60000);
+
+test('no fixed width exceeds the window floor we actually ship', async () => {
+  // Superseded a 320px criterion. 320 CSS px is WCAG's mobile reflow width; this is a
+  // resizable desktop window with an enforced floor of MIN_WINDOW_WIDTH. The real desktop
+  // risk is Windows text scaling (TextScaleFactor 1.0-2.25) against type declared as small as
+  // 7px, which the "text scales with the OS" test below covers instead.
+  // This still proves one thing: no hard-coded element could never fit the floor.
+  setViewport(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT);
   const App = require('../App').default;
   let tree!: ReactTestRenderer;
   await act(async () => { tree = renderer.create(React.createElement(App, { initialScreen: 'dispatch' })); });
@@ -188,7 +214,7 @@ test('no fixed width exceeds the 320px viewport', async () => {
       ? raw.reduce((acc: Record<string, unknown>, s: unknown) => (s ? Object.assign(acc, s) : acc), {})
       : (raw ?? {});
     const width = style?.width;
-    if (typeof width === 'number' && width > 320) offenders.push(`${node.type} width=${width}`);
+    if (typeof width === 'number' && width > MIN_WINDOW_WIDTH) offenders.push(`${node.type} width=${width}`);
     const children = Array.isArray(node.children) ? node.children : [];
     children.forEach((child: unknown, index: number) => walk(child, `${trail}/${node.type}[${index}]`));
   };

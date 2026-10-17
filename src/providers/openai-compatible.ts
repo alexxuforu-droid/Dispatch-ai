@@ -181,6 +181,6 @@ export async function generateImage(profile: ProviderProfile, prompt: string, si
   const payload = await response.json() as { data?: { b64_json?: string; url?: string }[] };
   const image = payload.data?.[0]?.b64_json;
   if (!image) throw new Error('The image endpoint returned no base64 image. This provider must support base64 image generation.');
-  if (image.length > 48 * 1024 * 1024) throw new Error('The generated image is too large to save (36 MB maximum).');
+  if (image.length > 48 * 1024 * 1024) throw new Error('The generated image is too large to save (48 MB maximum).');
   return image;
 }

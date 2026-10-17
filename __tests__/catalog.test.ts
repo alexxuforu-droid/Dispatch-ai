@@ -209,6 +209,35 @@ describe('a persisted snapshot is still not a preference', () => {
   });
 });
 
+describe('a refresh keys its suggestions under the NORMALIZED endpoint', () => {
+  // Every other test here uses an already-normalized ENDPOINT constant, so nothing caught a
+  // refresh that recorded under the raw string. A saved profile may legitimately carry a
+  // trailing slash or a mixed-case host; the catalog key must not, or the chips the screen
+  // looks up will not match the entry the refresh wrote.
+  const raw = 'https://api.openai.com/v1/';
+  const messy = 'https://API.openAI.com/v1';
+
+  test.each([raw, messy])('raw endpoint %s still lands under the normalized key', async rawEndpoint => {
+    stubModels(['m1', 'm2']);
+    await refreshModelCatalog({ ...defaultProviderProfile, endpoint: rawEndpoint, model: SAVED_MODEL, imageModel: '' });
+
+    // Readable at the normalized key the app actually uses...
+    expect(providerModelCatalog.lookup(ENDPOINT)).toEqual(['m1', 'm2']);
+    // ...and not stranded at the raw one, which would be invisible forever after.
+    expect(providerModelCatalog.lookup(rawEndpoint)).toEqual([]);
+  });
+
+  test('the saved id survives a refresh whose endpoint needed normalizing', async () => {
+    stubModels(['m1', 'm2']);
+    await refreshModelCatalog({ ...defaultProviderProfile, endpoint: raw, model: SAVED_MODEL, imageModel: '' });
+
+    expect((await loadProviderProfile()).model).toBe(SAVED_MODEL);
+    const { bodies } = stubChat();
+    await completeChat(await loadProviderProfile(), [{ role: 'user', content: 'go' }]);
+    expect(bodies[0].model).toBe(SAVED_MODEL);
+  });
+});
+
 describe('a corrupted cache cannot poison the suggestion list', () => {
   // Corrupted external storage is the only way in, and Array.isArray is not enough validation.
   // nulls, numbers and blanks all pass it, and a poisoned chip would set profile.model to a

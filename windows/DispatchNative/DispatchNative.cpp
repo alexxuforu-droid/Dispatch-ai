@@ -75,6 +75,30 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   appWindow.Title(L"Dispatch AI");
   appWindow.Resize({1000, 1000});
 
+  // Minimum window size. A desktop build has no 320px target -- that number comes from
+  // WCAG's mobile reflow criterion and does not transfer. What matters here is that the
+  // task board stays legible and that Windows text scaling (TextScaleFactor runs to 2.25)
+  // has room to grow into. Below this the layout stops being usable, so refuse to go there.
+  // MIN_WINDOW_WIDTH/HEIGHT in src/layoutFloor.ts mirror these values; a test asserts they
+  // have not drifted apart.
+  constexpr win32::WindowsInt32 kMinWindowWidth = 900;
+  constexpr win32::WindowsInt32 kMinWindowHeight = 600;
+  auto sizeInt32{win32::SizeInt32{kMinWindowWidth, kMinWindowHeight}};
+  auto minSize{win32::SizeInt32{kMinWindowWidth, kMinWindowHeight}};
+  SetWindowPos(appWindow.asWindowHandle().get(), nullptr, 0, 0, sizeInt32.Width, sizeInt32.Height,
+               SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  if (appWindow.Size() != minSize) {
+    // OverlappedPresenter refuses an OverlappedPresenter on some hosts; fall back to the
+    // window manager's own presenter so the floor is still enforced.
+    appWindow.SetPresenter(win32::AppWindow::GetDefaultPresenter());
+  }
+  appWindow.Changed([](win32::AppWindow const &, win32::AppWindowChangedEventArgs &args) {
+    if (args.DidPresenterChange()) {
+      auto presenter{win32::AppWindow::GetDefaultPresenter()};
+      if (presenter) presenter.PreferredMinimumWidth(kMinWindowWidth);
+    }
+  });
+
   // Get the ReactViewOptions so we can set the initial RN component to load
   auto viewOptions{reactNativeWin32App.ReactViewOptions()};
   viewOptions.ComponentName(L"DispatchNative");
