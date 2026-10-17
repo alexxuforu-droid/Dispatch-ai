@@ -58,7 +58,11 @@ export async function rehydrateModelCatalog(cache: ModelCatalogCache): Promise<b
   const entries = Object.entries(all);
   for (const [endpoint, snapshot] of entries) {
     if (Array.isArray(snapshot?.ids) && typeof snapshot.fetchedAt === 'number') {
-      cache.record(endpoint, snapshot.ids, snapshot.fetchedAt);
+      // Validate the entries, not just the array. Externally corrupted storage can hold
+      // nulls, numbers or blanks; a poisoned chip would set profile.model to a non-string and
+      // the next .trim() would throw. Dropping junk costs a suggestion, never a setting.
+      const ids = snapshot.ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+      cache.record(endpoint, [...new Set(ids.map(id => id.trim()))], snapshot.fetchedAt);
     }
   }
   return entries.length > 0;

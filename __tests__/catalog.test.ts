@@ -208,3 +208,31 @@ describe('a persisted snapshot is still not a preference', () => {
     expect(loaded.model).toBe(SAVED_MODEL);
   });
 });
+
+describe('a corrupted cache cannot poison the suggestion list', () => {
+  // Corrupted external storage is the only way in, and Array.isArray is not enough validation.
+  // nulls, numbers and blanks all pass it, and a poisoned chip would set profile.model to a
+  // non-string so the next .trim() throws.
+  test('non-string and blank ids rehydrate only the real ones', async () => {
+    const AsyncStorage = jest.requireMock('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.setItem('dispatch.catalog.v1', JSON.stringify({
+      [ENDPOINT]: { fetchedAt: Date.now(), ids: [null, 7, '   ', 'ok-id', 'ok-id', ' second '] },
+    }));
+    const fresh = new ModelCatalogCache();
+    await rehydrateModelCatalog(fresh);
+    expect(fresh.lookup(ENDPOINT, Date.now())).toEqual(['ok-id', 'second']);
+    for (const id of fresh.lookup(ENDPOINT, Date.now())) expect(typeof id).toBe('string');
+    expect((await loadProviderProfile()).model).toBe(SAVED_MODEL);
+  });
+
+  test('a snapshot of nothing but junk yields zero suggestions rather than junk', async () => {
+    const AsyncStorage = jest.requireMock('@react-native-async-storage/async-storage').default;
+    await AsyncStorage.setItem('dispatch.catalog.v1', JSON.stringify({
+      [ENDPOINT]: { fetchedAt: Date.now(), ids: [null, 0, false, {}, ''] },
+    }));
+    const fresh = new ModelCatalogCache();
+    await rehydrateModelCatalog(fresh);
+    expect(fresh.lookup(ENDPOINT, Date.now())).toEqual([]);
+    expect((await loadProviderProfile()).model).toBe(SAVED_MODEL);
+  });
+});
