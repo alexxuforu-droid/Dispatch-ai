@@ -479,8 +479,8 @@ function UsageHome() {
   // Recovery for an unreadable ledger. Without this the failed state is a dead end: the
   // screen can report the problem but never clear the thing causing it.
   const discardUsageHistory = async () => {
-    // Only claim the history is gone once the store confirms it. clearUsage swallows its
-    // own failure, so a resolved promise is the signal, not an assumption.
+    // clearUsage swallows its own failure, so the promise tells us nothing either way. The
+    // store is re-read afterwards and only a confirmed zero counts as success.
     await clearUsage();
     const remaining = await readUsage().then(rows => rows.length).catch(() => -1);
     if (remaining !== 0) { setDiscardFailed(true); return; }
@@ -510,7 +510,7 @@ function UsageHome() {
     <Text style={styles.collectionHeading}>Every token your agents spend.</Text>
     <Text style={styles.collectionBody}>Counts are exact where your provider reports usage. Elsewhere they are length-based estimates, shown with ≈ and rounded, because a length heuristic sits within tens of percent of a real tokenizer. Exact and estimated counts are listed separately and never added together.</Text>
     {failed
-      ? <View style={styles.emptyTeamNotice}><Text style={styles.savedTeamName}>Usage history could not be read</Text><Text style={styles.teamSectionBody}>{discardFailed ? 'The local usage history could not be discarded. Nothing was changed; try again.' : 'The local usage ledger did not load. Nothing is lost until you discard it.'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Discard local usage history" onPress={discardUsageHistory} style={({ pressed }) => [styles.secondaryAction, styles.usageDiscard, pressed && styles.pressed]}><Text style={styles.secondaryActionText}>Discard local usage history</Text></Pressable></View>
+      ? <View style={styles.emptyTeamNotice}><Text style={styles.savedTeamName}>Usage history could not be read</Text><Text style={styles.teamSectionBody}>{discardFailed ? 'The local usage history could not be confirmed as cleared. It may be partly removed; try again or leave it alone.' : 'The local usage ledger did not load. Nothing is lost until you discard it.'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Discard local usage history" onPress={discardUsageHistory} style={({ pressed }) => [styles.secondaryAction, styles.usageDiscard, pressed && styles.pressed]}><Text style={styles.secondaryActionText}>Discard local usage history</Text></Pressable></View>
       : records === null
         ? <View style={styles.emptyTeamNotice}><Text style={styles.savedTeamName}>Reading usage history</Text><Text style={styles.teamSectionBody}>Loading recorded provider calls from this device.</Text></View>
         : <>
@@ -709,6 +709,14 @@ function ProviderSettings({ onReady, onRemoved }: { onReady: () => void; onRemov
   const [suggestedModels, setSuggestedModels] = useState<string[]>([]);
   const [catalogCheckedAt, setCatalogCheckedAt] = useState<number | null>(null);
   const [catalogBusy, setCatalogBusy] = useState(false);
+  // normalizeProviderEndpoint throws on anything the endpoint field can hold mid-edit, and
+  // this runs during render, where there is no error boundary above it. When the endpoint
+  // cannot be parsed there is no catalog entry to be stale about, so say nothing.
+  const catalogStale = (() => {
+    if (catalogCheckedAt === null) return false;
+    try { return providerModelCatalog.freshness(normalizeProviderEndpoint(profile.endpoint), Date.now()).stale; }
+    catch { return false; }
+  })();
   const [status, setStatus] = useState('Settings are stored locally; the API key is kept in Windows Credential Locker.');
   const refreshModelSuggestions = (endpoint: string) => {
     try {
@@ -765,7 +773,7 @@ function ProviderSettings({ onReady, onRemoved }: { onReady: () => void; onRemov
     <View style={styles.providerCardHead}><View style={{ flex: 1 }}><Text style={styles.providerTitle}>Model provider</Text><Text style={styles.providerCaption}>OpenAI-compatible · OpenAI, OpenRouter, or a local endpoint</Text></View><View style={[styles.providerDot, hasSavedKey && styles.providerDotSaved]} /></View>
     <Text style={styles.fieldLabel}>API endpoint</Text><TextInput accessibilityLabel="OpenAI-compatible API endpoint" value={profile.endpoint} onChangeText={value => update('endpoint', value)} autoCapitalize="none" autoCorrect={false} placeholder="https://api.openai.com/v1" placeholderTextColor={colors.muted} style={styles.providerInput} />
     <Text style={styles.fieldLabel}>Model ID</Text><TextInput accessibilityLabel="Provider model ID" value={profile.model} onChangeText={value => update('model', value)} autoCapitalize="none" autoCorrect={false} placeholder="Enter a model supported by this endpoint" placeholderTextColor={colors.muted} style={styles.providerInput} />
-    <View style={styles.catalogRow}><Text style={styles.catalogNote}>{catalogCheckedAt === null ? 'Suggestions appear once the provider model list is fetched. Type any model ID above at any time.' : `Model list checked ${Math.max(0, Math.round((Date.now() - catalogCheckedAt) / 60000))} min ago.${providerModelCatalog.freshness(normalizeProviderEndpoint(profile.endpoint), Date.now()).stale ? ' It may be out of date — refresh for an accurate list.' : ''} It only ever offers suggestions.`}</Text><Pressable accessibilityRole="button" accessibilityLabel="Refresh the provider model list" disabled={catalogBusy} onPress={refreshCatalog} style={({ pressed }) => [styles.catalogRefresh, catalogBusy && styles.catalogRefreshBusy, pressed && styles.pressed]}><Text numberOfLines={1} style={styles.catalogRefreshText}>{catalogBusy ? 'Refreshing…' : 'Refresh list'}</Text></Pressable></View>
+    <View style={styles.catalogRow}><Text style={styles.catalogNote}>{catalogCheckedAt === null ? 'Suggestions appear once the provider model list is fetched. Type any model ID above at any time.' : `Model list checked ${Math.max(0, Math.round((Date.now() - catalogCheckedAt) / 60000))} min ago.${catalogStale ? ' It may be out of date — refresh for an accurate list.' : ''} It only ever offers suggestions.`}</Text><Pressable accessibilityRole="button" accessibilityLabel="Refresh the provider model list" disabled={catalogBusy} onPress={refreshCatalog} style={({ pressed }) => [styles.catalogRefresh, catalogBusy && styles.catalogRefreshBusy, pressed && styles.pressed]}><Text numberOfLines={1} style={styles.catalogRefreshText}>{catalogBusy ? 'Refreshing…' : 'Refresh list'}</Text></Pressable></View>
     {suggestedModels.length ? <View style={styles.modelSuggestions}>{suggestedModels.map(id => <Pressable key={id} accessibilityRole="radio" accessibilityLabel={`Use model ${id}`} accessibilityState={{ checked: profile.model === id }} onPress={() => update('model', id)} style={[styles.teamChip, styles.modelChip, profile.model === id && styles.teamChipActive]}><Text numberOfLines={1} style={[styles.teamChipText, profile.model === id && styles.teamChipTextActive]}>{id}</Text></Pressable>)}</View> : null}
     <Text style={styles.fieldLabel}>Image-generation model (optional)</Text><TextInput accessibilityLabel="Image-generation model ID" value={profile.imageModel} onChangeText={value => update('imageModel', value)} autoCapitalize="none" autoCorrect={false} placeholder="Enter a model that supports image generation" placeholderTextColor={colors.muted} style={styles.providerInput} />
     <Text style={styles.providerHint}>The chat model also needs image-input support for automatic visual review. Unsupported review stays pending for you.</Text>

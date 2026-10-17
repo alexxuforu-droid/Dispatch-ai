@@ -1041,3 +1041,80 @@ Received: 1346`.
 - AsyncStorage mock duplicated across 5 test files (hygiene, judges confirmed).
 - DesignStudio hardcodes ~37 off-token hex values; measured, all decorative borders, left
   as deliberate low-contrast chrome.
+
+---
+
+# APPEND 11 — a real defect found by auditing the tests, not by reading the code
+
+## The defect: staleness was computed and never shown
+
+The objective asks for a catalog that shows staleness. `ModelCatalogCache.freshness()`
+returned `{ fetchedAt, stale }`, and a grep of `App.tsx` for `.stale` returned **zero
+matches**. The settings note said only "Model list checked 42 min ago", which is a timestamp,
+not a staleness statement. The capability existed and was unreachable from the UI.
+
+`App.tsx:768` now renders, using the cache's own signal rather than a second staleness
+calculation:
+
+```
+Model list checked ${N} min ago.${freshness(...).stale ? ' It may be out of date — refresh for an accurate list.' : ''} It only ever offers suggestions.
+```
+
+The wording is deliberate. It says **the list** may be out of date. It never says the saved
+id is stale, unknown, or invalid — that distinction is the invariant, and the copy preserves
+it. Red proof: forcing the condition to `false` gives
+`Expected substring: "It may be out of date"`.
+
+This is the second time in this session that the honest test was not "does it work" but "can
+it be observed". The first was the ledger's error asymmetry. A branch nobody can reach is a
+branch nobody has looked at.
+
+## The load-bearing test gaps, and the hole that actually mattered
+
+A test judge scored **9.3 FAIL**. Its findings, and what closed each:
+
+1. **`readUsage`/`recordUsage` asymmetry untested.** The asymmetry is deliberate — a write
+   failure must not sink a run that already happened, a read failure must be able to say
+   "could not read" — and nothing tested either half. Fixed by making a throwing store
+   injectable. Red twice: making `recordUsage` propagate, and making `readUsage` swallow.
+2. **The usage screen's failure state was untested**, so the branch was unreachable by test.
+   Now driven through the real `readUsage` path. It asserts the failure screen shows no
+   totals at all — the dangerous outcome is a confident zero over data never loaded.
+3. **`discardUsageHistory` claimed success without confirming.** Now covered both ways,
+   including the unconfirmed path (`Expected substring: "could not be discarded"`).
+4. **The one that mattered.** A break making the profile prefer the catalog's first
+   suggestion **passed the acid test**. Cause: every case cleared the cache before loading the
+   profile, so the fallback never fired. The gap was the absence of a *persisted snapshot* at
+   the moment the profile is read. Three tests now hold one in play. Red proof, with the
+   attribute attributable rather than incidental:
+   ```
+   Expected: "a-model-the-provider-never-listed"
+   Received: "alpha"
+   ```
+   An earlier attempt at this red-proof returned `""` and proved nothing — the injected patch
+   was itself broken. A red that cannot be attributed is not evidence.
+5. **Three capture tests had zero assertions** while their comments claimed things. `snapshot()`
+   now returns the rendered JSON; each test asserts what its comment claims.
+6. Four bare `rejects.toThrow()` given message matchers; `jest.setTimeout` so a filtered `-t`
+   run stops reporting a spurious failure.
+
+## One mock instead of five
+
+Five suites carried a byte-identical 13-line AsyncStorage mock. The failure-injection mode
+needed by (1) would have had to be written five times — which is exactly why the gap survived
+a previous audit. `__tests__/asyncStorageMock.ts` is now the single factory; the store stays
+per-file because jest's module registry is per-file. One line in `jest.config.js` keeps the
+shared module out of `testMatch`.
+
+## Two false alarms, recorded so they are not re-investigated
+
+- **`≈` looked like mojibake.** My console rendered `U+2248` as `\uFFFD`. Read the bytes with
+  node instead: `App.tsx` and `usageLedger.ts:155` both carry a correct `≈`. Not a defect.
+- **The worktree build agent's toolset finding was right and my earlier diagnosis was wrong**,
+  already recorded in APPEND 10. Worth restating: four attempts treated a version mismatch as
+  a missing workload.
+
+## State
+
+`4daa471` — 159 tests / 8 suites, tsc exit 0, eslint 0 errors with 45 pre-existing warnings.
+Four judges dispatched: code, test, adversarial-on-the-staleness-change, catalog-boundary.

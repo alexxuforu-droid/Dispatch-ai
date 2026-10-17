@@ -146,8 +146,8 @@ test('a discard that cannot be confirmed is reported as a failure, never as a su
   await press(tree, 'Discard local usage history');
   const rendered = textNodes(tree.toJSON()).join(' \n ');
 
-  expect(rendered).toContain('could not be discarded');
-  expect(rendered).toContain('Nothing was changed');
+  expect(rendered).toContain('could not be confirmed as cleared');
+  expect(rendered).toContain('may be partly removed');
   // Still the failure screen: an unconfirmed clear must not flip the UI to a happy empty state.
   expect(rendered).toContain('Usage history could not be read');
   await unmount(tree);
@@ -175,4 +175,60 @@ test('a confirmed discard clears the ledger and returns the screen to its empty 
   expect(rendered).toContain('Exact total');
   expect(rendered).toContain('0');
   await unmount(tree);
+});
+
+// Regression: the settings note used to call normalizeProviderEndpoint during render to work
+// out staleness. That function throws on anything the endpoint field can hold mid-edit, and
+// nothing above App catches, so one ordinary keystroke could take the screen down. Every
+// endpoint the field can legitimately contain must render without throwing.
+describe('settings survives an endpoint that is mid-edit', () => {
+  const hostile = [
+    '',
+    '   ',
+    'api',
+    'api.openai',
+    'http://api.openai.com/v1',
+    'https://user:pass@api.openai.com/v1',
+    'https://api.openai.com/v1?x=1',
+    'https://api.openai.com/v1#frag',
+    'ht!tp://%%%',
+    '://',
+  ];
+
+  test.each(hostile)('renders with endpoint %j rather than throwing', async endpoint => {
+    const { saveProviderProfile, defaultProviderProfile } = require('../src/persistence/providerProfile');
+    const { saveCatalogSnapshot, clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    const { providerModelCatalog } = require('../src/providers/openai-compatible');
+    await clearCatalogSnapshot();
+    // A catalog was genuinely fetched at some point, so the stale branch is reachable.
+    await saveCatalogSnapshot('https://api.openai.com/v1', ['a-model'], Date.now() - 60 * 60 * 1000);
+    providerModelCatalog.forget('https://api.openai.com/v1');
+    await saveProviderProfile({ ...defaultProviderProfile, model: 'saved-model-id', imageModel: '' });
+
+    // Typing into the endpoint field must not throw out of render.
+    const holder: { tree: ReactTestRenderer | null } = { tree: null };
+    let threw: unknown = null;
+    try {
+      await act(async () => {
+        holder.tree = renderer.create(React.createElement(App, { initialScreen: 'settings' }));
+      });
+      const mounted = holder.tree;
+      if (!mounted) throw new Error('settings did not mount');
+      const input = findByLabel(mounted.toJSON(), 'OpenAI-compatible API endpoint');
+      const onChangeText = input?.props?.onChangeText;
+      await act(async () => {
+        if (typeof onChangeText === 'function') (onChangeText as (next: string) => void)(endpoint);
+      });
+    } catch (error) {
+      threw = error;
+    }
+    expect(threw).toBeNull();
+
+    // And the saved model id is still free text, untouched by the catalog.
+    const tree = holder.tree as ReactTestRenderer;
+    const rendered = textNodes(tree.toJSON()).join(' \n ');
+    expect(rendered).toContain('Model ID');
+    expect(rendered).not.toContain('"editable": false');
+    await unmount(tree);
+  });
 });
