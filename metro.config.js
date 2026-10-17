@@ -19,6 +19,24 @@ const rnwPath = fs.realpathSync(
 const config = {
   //
   resolver: {
+    // react-native 0.84.1 ships src/private/devsupport/rndevtools/ReactDevToolsSettingsManager
+    // as .android.js, .ios.js and .js.flow only -- there is no desktop implementation. On
+    // platform=windows Metro cannot resolve it, which fails the entire bundle with a 500 and
+    // leaves the app stuck on its loading bar. The android build is safe to reuse here: both
+    // of its exports call through an optional-chained native spec, so off Android they are
+    // no-ops. DevTools are a developer convenience and the app does not need them to run.
+    resolveRequest: (context, moduleName, platform) => {
+      if (moduleName.endsWith('rndevtools/ReactDevToolsSettingsManager')) {
+        return {
+          type: 'sourceFile',
+          filePath: require.resolve(
+            'react-native/src/private/devsupport/rndevtools/ReactDevToolsSettingsManager.android',
+          ),
+        };
+      }
+      return context.resolveRequest(context, moduleName, platform);
+    },
+    //
     blockList: [
       // This stops "npx @react-native-community/cli run-windows" from causing the metro server to crash if its already running
       new RegExp(
