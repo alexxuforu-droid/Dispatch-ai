@@ -710,14 +710,21 @@ function ProviderSettings({ onReady, onRemoved }: { onReady: () => void; onRemov
   const [catalogCheckedAt, setCatalogCheckedAt] = useState<number | null>(null);
   const [catalogBusy, setCatalogBusy] = useState(false);
   // normalizeProviderEndpoint throws on anything the endpoint field can hold mid-edit, and
-  // this runs during render, where there is no error boundary above it. When the endpoint
-  // cannot be parsed there is no catalog entry to be stale about, so say nothing.
+  // this runs during render, where there is no error boundary above it. Defence in depth: with
+  // `update` recomputing suggestions on every endpoint change, an unparseable endpoint also
+  // re-nulls catalogCheckedAt, so render currently returns above and never reaches this. Kept
+  // because it costs one try/catch and removes a whole class of crash if any future path sets
+  // an endpoint without recomputing.
   const catalogStale = (() => {
     if (catalogCheckedAt === null) return false;
     try { return providerModelCatalog.freshness(normalizeProviderEndpoint(profile.endpoint), Date.now()).stale; }
     catch { return false; }
   })();
   const [status, setStatus] = useState('Settings are stored locally; the API key is kept in Windows Credential Locker.');
+  // The endpoint the screen is currently pointing at. Async catalog work started for one
+  // endpoint must not write its result onto another, so the value is tracked outside render
+  // state where an await cannot leave it stale.
+  const catalogEndpointRef = useRef(defaultProviderProfile.endpoint);
   const refreshModelSuggestions = (endpoint: string) => {
     try {
       setSuggestedModels(providerModelCatalog.lookup(normalizeProviderEndpoint(endpoint), Date.now()));
@@ -728,11 +735,16 @@ function ProviderSettings({ onReady, onRemoved }: { onReady: () => void; onRemov
   // reads, rewrites or validates profile.model, and a failure here never blocks a save.
   const refreshCatalog = async () => {
     setCatalogBusy(true);
+    const requested = profile;
     try {
-      const { ids, fetchedAt } = await refreshModelCatalog(profile);
+      const { ids, fetchedAt } = await refreshModelCatalog(requested);
+      // The endpoint may have been edited while this request was in flight. That response
+      // describes a provider the user is no longer pointing at, so it is dropped rather than
+      // shown beside a note that would then describe the wrong endpoint.
+      if (catalogEndpointRef.current !== requested.endpoint) return;
       setSuggestedModels(ids);
       setCatalogCheckedAt(fetchedAt);
-      await saveCatalogSnapshot(normalizeProviderEndpoint(profile.endpoint), ids, fetchedAt);
+      await saveCatalogSnapshot(normalizeProviderEndpoint(requested.endpoint), ids, fetchedAt);
       setStatus(`Model list updated with ${ids.length} ${ids.length === 1 ? 'entry' : 'entries'}. Your saved model ID is unchanged.`);
     } catch (error) {
       setStatus(error instanceof Error ? `Could not refresh the model list: ${error.message}` : 'Could not refresh the model list.');
@@ -743,16 +755,18 @@ function ProviderSettings({ onReady, onRemoved }: { onReady: () => void; onRemov
     Promise.all([loadProviderProfile(), hasProviderSecret('openai-compatible'), rehydrateModelCatalog(providerModelCatalog)]).then(([savedProfile, hasSecret]) => {
       if (!active) return;
       setProfile(savedProfile); setHasSavedKey(hasSecret);
+      catalogEndpointRef.current = savedProfile.endpoint;
       refreshModelSuggestions(savedProfile.endpoint);
       setStatus(hasSecret ? 'A provider key is saved. Test the connection to confirm it works.' : 'Settings are stored locally; the API key is kept in Windows Credential Manager.');
     }).catch(() => { if (active) setStatus('Secure credential storage is unavailable. No API key has been saved.'); });
     return () => { active = false; };
   }, []);
   const update = (key: keyof ProviderProfile, value: string) => {
-    // Suggestions belong to the endpoint that produced them. Editing the endpoint drops them
-    // rather than leaving chips for a provider the user is no longer pointing at, which would
-    // also make the "last checked" note describe a different endpoint than the one on screen.
-    if (key === 'endpoint') { setSuggestedModels([]); setCatalogCheckedAt(null); }
+    // Suggestions belong to the endpoint that produced them. Editing the endpoint recomputes
+    // them from the cache for the new endpoint rather than clearing: clearing would leave the
+    // previous provider's chips on screen AND throw away a listing that is already cached and
+    // fresh for the endpoint just typed, forcing a pointless network round trip.
+    if (key === 'endpoint') { catalogEndpointRef.current = value; refreshModelSuggestions(value); }
     setProfile(current => ({ ...current, [key]: value }));
   };
   const connect = async () => {

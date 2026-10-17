@@ -182,6 +182,16 @@ test('a confirmed discard clears the ledger and returns the screen to its empty 
 // nothing above App catches, so one ordinary keystroke could take the screen down. Every
 // endpoint the field can legitimately contain must render without throwing.
 describe('settings survives an endpoint that is mid-edit', () => {
+  // What these ten cases actually prove: typing an unparseable endpoint never throws out of
+  // render, and never locks the model field.
+  //
+  // What they do NOT prove: that the try/catch inside `catalogStale` is what saves them.
+  // Deleting that try/catch leaves all ten green. The reason is this commit's own doing --
+  // `update` now recomputes suggestions for the new endpoint, so a hostile value hits
+  // `refreshModelSuggestions`' catch and re-nulls `catalogCheckedAt` before render can reach
+  // the guarded call. The guard is defence in depth against a future path that sets an
+  // endpoint without recomputing; it is currently unreachable, and this file does not claim
+  // otherwise.
   const hostile = [
     '',
     '   ',
@@ -200,9 +210,10 @@ describe('settings survives an endpoint that is mid-edit', () => {
     const { saveCatalogSnapshot, clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
     const { providerModelCatalog } = require('../src/providers/openai-compatible');
     await clearCatalogSnapshot();
-    // A catalog was genuinely fetched at some point, so the stale branch is reachable.
-    await saveCatalogSnapshot('https://api.openai.com/v1', ['a-model'], Date.now() - 60 * 60 * 1000);
-    providerModelCatalog.forget('https://api.openai.com/v1');
+    const MID_EDIT_ENDPOINT = 'https://api.openai.com/v1';
+    providerModelCatalog.forget(MID_EDIT_ENDPOINT);
+    providerModelCatalog.record(MID_EDIT_ENDPOINT, ['a-model'], Date.now() - 60 * 60 * 1000);
+    await saveCatalogSnapshot(MID_EDIT_ENDPOINT, ['a-model'], Date.now() - 60 * 60 * 1000);
     await saveProviderProfile({ ...defaultProviderProfile, model: 'saved-model-id', imageModel: '' });
 
     // Typing into the endpoint field must not throw out of render.
@@ -275,7 +286,12 @@ describe('the catalog note tells the truth in both directions', () => {
     expect(rendered).toContain('Suggestions appear once the provider model list is fetched');
     // Free text is always available; the empty state must not imply the field is locked.
     expect(rendered).toContain('Type any model ID above at any time');
-    expect(rendered).not.toContain('"editable": false');
+    // Read the control's props, not the rendered text. An earlier version asserted
+    // not.toContain('"editable": false') against textNodes output, which can only emit string
+    // children and accessibilityLabel values -- that literal exists nowhere in the app, so
+    // the assertion could not fail whatever the component did.
+    expect(findByLabel(tree.toJSON(), 'Provider model ID')?.props?.editable).toBeUndefined();
+    expect(findByLabel(tree.toJSON(), 'Provider model ID')?.props?.disabled).toBeUndefined();
     await unmount(tree);
   });
 
@@ -304,11 +320,101 @@ describe('the catalog note tells the truth in both directions', () => {
     expect(after).not.toContain('Use model alpha');
     expect(after).not.toContain('Use model beta');
     expect(after).toContain('Suggestions appear once the provider model list is fetched');
-    // The saved id is untouched by all of this. An input's value is a prop, not text, so it
-    // has to be read off the control rather than scraped from the rendered tree.
     const modelInput = findByLabel(tree.toJSON(), 'Provider model ID');
     expect(modelInput?.props?.value).toBe('saved-model-id');
     await unmount(tree);
+  });
+
+  // A refresh started for one endpoint must not write its result onto another the user
+  // typed while the request was in flight. The window is real: /models is a network call.
+  test('an in-flight refresh does not resurrect the previous endpoint suggestions', async () => {
+    const { providerModelCatalog } = require('../src/providers/openai-compatible');
+    const { clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    const { saveProviderProfile, defaultProviderProfile } = require('../src/persistence/providerProfile');
+    await clearCatalogSnapshot();
+    providerModelCatalog.forget(ENDPOINT);
+    await saveProviderProfile({ ...defaultProviderProfile, endpoint: ENDPOINT, model: 'saved-model-id', imageModel: '' });
+
+    // A /models response the test controls, so the endpoint can be edited mid-request.
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise(resolve => { release = resolve; });
+    (globalThis as { fetch?: unknown }).fetch = jest.fn(async (url: string) => {
+      if (String(url).includes('/models')) {
+        await pending;
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'stale-endpoint-model' }] }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: 'ok' } }] }) };
+    });
+
+    const tree = await mountSettings();
+    await press(tree, 'Refresh the provider model list');
+
+    // The user points somewhere else while the request is still open.
+    const endpointInput = findByLabel(tree.toJSON(), 'OpenAI-compatible API endpoint');
+    const onChangeText = endpointInput?.props?.onChangeText;
+    await act(async () => {
+      if (typeof onChangeText === 'function') (onChangeText as (next: string) => void)('https://other.example/v1');
+    });
+
+    release({});
+    await act(async () => { await pending; await Promise.resolve(); });
+
+    const after = textNodes(tree.toJSON()).join(' \n ');
+    expect(after).not.toContain('Use model stale-endpoint-model');
+    expect(findByLabel(tree.toJSON(), 'Provider model ID')?.props?.value).toBe('saved-model-id');
+    await unmount(tree);
+  });
+
+  test('switching to an endpoint with a fresh cached listing keeps that listing', async () => {
+    // Clearing on edit would also throw away a listing the app already holds and knows is
+    // fresh, forcing a network round trip for data already in memory.
+    const { providerModelCatalog } = require('../src/providers/openai-compatible');
+    const { clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    const { saveProviderProfile, defaultProviderProfile } = require('../src/persistence/providerProfile');
+    const OTHER = 'https://other.example/v1';
+    await clearCatalogSnapshot();
+    providerModelCatalog.forget(ENDPOINT);
+    providerModelCatalog.record(OTHER, ['cached-alpha', 'cached-beta'], Date.now());
+    await saveProviderProfile({ ...defaultProviderProfile, endpoint: ENDPOINT, model: 'saved-model-id', imageModel: '' });
+
+    const tree = await mountSettings();
+    const input = findByLabel(tree.toJSON(), 'OpenAI-compatible API endpoint');
+    const onChangeText = input?.props?.onChangeText;
+    await act(async () => {
+      if (typeof onChangeText === 'function') (onChangeText as (next: string) => void)(OTHER);
+    });
+
+    const rendered = textNodes(tree.toJSON()).join(' \n ');
+    expect(rendered).toContain('Use model cached-alpha');
+    expect(rendered).toContain('Model list checked');
+    // And the old endpoint's chips are gone, which is the original defect.
+    expect(rendered).not.toContain('Use model alpha');
+    await unmount(tree);
+  });
+
+  // Mutually exclusive: the note has two states and showing both at once would tell the user
+  // they have no suggestions and that the list was checked recently.
+  test('the no-catalog and checked copy are never both shown', async () => {
+    const { providerModelCatalog } = require('../src/providers/openai-compatible');
+    const { clearCatalogSnapshot } = require('../src/persistence/modelCatalogStore');
+    const { saveProviderProfile, defaultProviderProfile } = require('../src/persistence/providerProfile');
+
+    for (const stale of [true, false]) {
+      await clearCatalogSnapshot();
+      providerModelCatalog.forget(ENDPOINT);
+      if (stale) providerModelCatalog.record(ENDPOINT, ['alpha'], Date.now() - 60 * 60 * 1000);
+      else providerModelCatalog.record(ENDPOINT, ['alpha'], Date.now());
+      await saveProviderProfile({ ...defaultProviderProfile, endpoint: ENDPOINT, model: 'saved-model-id', imageModel: '' });
+
+      const tree = await mountSettings();
+      const rendered = textNodes(tree.toJSON()).join(' \n ');
+      const emptyCopy = rendered.includes('Suggestions appear once the provider model list is fetched');
+      const checkedCopy = rendered.includes('Model list checked');
+      expect(emptyCopy && checkedCopy).toBe(false);
+      // Exactly one of the two states is showing.
+      expect(emptyCopy !== checkedCopy).toBe(true);
+      await unmount(tree);
+    }
   });
 
   test('the saved model id is the input value, not merely text on screen', async () => {

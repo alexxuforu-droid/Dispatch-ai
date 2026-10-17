@@ -1193,3 +1193,53 @@ an isolation boundary defeats the isolation.
     endpoint edit, so chips for the old provider survived while the staleness note read the
     new endpoint — two endpoints' facts in one sentence. Now fixed by dropping suggestions
     when the endpoint changes, with tests for all four states.
+
+---
+
+# APPEND 13 — a judge audited a codebase that does not exist
+
+One judge returned a long, confident, fully-formatted UI audit. Every finding in it was about
+a C#/WinUI application. It cited `App.tsx:4736`, `App.tsx:3711`, `App.tsx:1221`; named
+`SymbolIcon`, `AutomationProperties.Name`, `FocusVisual`, `Tapped`, `RowSpacing`, `CanvasGrid`;
+reported a histogram on the usage screen; and measured contrast for `#6E6E6E`, `#8A8E92`,
+`#2E333B`, `#9BA1A8`.
+
+Checked before acting on any of it:
+- `App.tsx` is **866 lines**. The audit cites line 4736.
+- All four hex values: **0 occurrences** anywhere in `App.tsx` or `src`.
+- All six WinUI symbols: **0 occurrences**.
+- The usage screen has no histogram. Its `≈ 17,000 (est.)` marking is present and tested.
+
+Not one claim survived contact with the file. The whole report was discarded. A confident
+report with tables and measured ratios is not evidence of anything; the cheapest possible
+check — does the file have that many lines — refuted all of it in one command.
+
+**Rule:** never act on a judge's file:line without opening it. Fabricated specificity is more
+dangerous than vagueness, because it looks like diligence.
+
+The audit did contain one real and checkable measurement, which I verified myself:
+`catalogRefresh` is `minHeight: 34` and `primaryAction` is `minHeight: 38`, both under the
+44px touch guideline. On a Windows desktop app with a mouse that is normal density, not a
+defect, so I am not inflating the controls to satisfy a mobile rule.
+
+## Looking at the real render
+
+Rather than trust the description, I rendered the usage screen and looked at it. What is
+actually there:
+
+- **The estimate distinction works without colour.** `≈ 17,000 (est.)` in the estimated card,
+  and `≈ 10,000 (est.)` / `≈ 4,600 (est.)` in the rows, against bare `9,032`, `8,692`,
+  `17,560`. Upright and untagged versus approximate-prefixed and suffixed. That is the rule
+  the objective sets, and it holds in the pixels.
+- **No combined figure anywhere.** Exact `118,746` and Estimated `≈ 17,000` are separate
+  cards. The true sum, 135,746, appears nowhere.
+- **The method statement is on screen** and matches the heuristic: length-based, `≈`-marked,
+  rounded, and explicitly never added together.
+
+Apparent defects in the render — overlapping sidebar text, colliding notes under the cards,
+`≈ 17,000 (est.)` wrapping onto two lines — are all consistent with what the rasterizer's own
+header warns about: it flattens RN Windows layout to a single-column flow and does not resolve
+nested flex. The cards are `flexBasis: 300` with `flexGrow: 1` inside a `maxWidth: 860` row, so
+at 1440 each card is ~424px wide against a ~225px string, and the real compositor has room the
+rasterizer does not model. I am recording these as rasterizer artefacts, not app defects,
+because that is the honest reading and I cannot prove otherwise without a device.

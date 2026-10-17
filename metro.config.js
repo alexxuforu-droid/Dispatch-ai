@@ -26,7 +26,9 @@ const config = {
     // of its exports call through an optional-chained native spec, so off Android they are
     // no-ops. DevTools are a developer convenience and the app does not need them to run.
     resolveRequest: (context, moduleName, platform) => {
-      if (moduleName.endsWith('rndevtools/ReactDevToolsSettingsManager')) {
+      // Windows only. Android and iOS each ship a real implementation, and substituting the
+      // Android one for them would replace working code with a no-op.
+      if (platform === 'windows' && moduleName.endsWith('rndevtools/ReactDevToolsSettingsManager')) {
         return {
           type: 'sourceFile',
           filePath: require.resolve(
