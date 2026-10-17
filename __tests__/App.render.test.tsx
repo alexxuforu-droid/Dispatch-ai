@@ -1,19 +1,9 @@
 import React, { act } from 'react';
 import renderer, { ReactTestRenderer } from 'react-test-renderer';
 
-jest.mock('@react-native-async-storage/async-storage', () => {
-  const store = new Map<string, string>();
-  return {
-    __esModule: true,
-    default: {
-      getItem: async (key: string) => (store.has(key) ? store.get(key)! : null),
-      setItem: async (key: string, value: string) => { store.set(key, value); },
-      removeItem: async (key: string) => { store.delete(key); },
-      clear: async () => { store.clear(); },
-      getAllKeys: async () => [...store.keys()],
-    },
-  };
-});
+jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
+
+import { resetAsyncStorageMock, storageFailures } from './asyncStorageMock';
 
 jest.mock('react-native-safe-area-context', () => {
   const ReactActual = require('react');
@@ -26,6 +16,10 @@ jest.mock('react-native-safe-area-context', () => {
 });
 
 const App = require('../App').default;
+
+// Mounting the whole App costs several seconds. Without this, running a single test out of
+// this file with -t would trip the 5s default and report a spurious failure.
+jest.setTimeout(60000);
 
 async function mount(element?: React.ReactElement): Promise<ReactTestRenderer> {
   let tree!: ReactTestRenderer;
@@ -101,5 +95,84 @@ test('the usage screen shows two totals and never a combined one', async () => {
   expect(rendered).not.toContain('47000');
   // The image-exclusion claim the screen makes must actually be on the screen.
   expect(rendered).toContain('Image generation calls are not counted');
+  await unmount(tree);
+});
+
+// The failure branch of the usage screen is unreachable unless a read is made to fail, and an
+// unreachable branch is a branch nobody has ever looked at. These drive it through the real
+// readUsage path rather than by injecting props.
+function findByLabel(node: TreeRoot, label: string): TreeNode | null {
+  if (!node || typeof node === 'string') return null;
+  if (Array.isArray(node)) {
+    for (const kid of node) {
+      const hit = findByLabel(kid, label);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (node.props?.accessibilityLabel === label) return node;
+  return findByLabel((node.children ?? null) as TreeRoot, label);
+}
+
+async function press(tree: ReactTestRenderer, label: string): Promise<void> {
+  const node = findByLabel(tree.toJSON(), label);
+  if (!node) throw new Error(`no node labelled "${label}" is rendered`);
+  const handler = node.props.onClick ?? node.props.onPress ?? node.props.onResponderRelease;
+  if (typeof handler !== 'function') throw new Error(`node "${label}" exposes no press handler`);
+  await act(async () => { handler(); });
+}
+
+afterEach(() => { resetAsyncStorageMock(); });
+
+test('an unreadable ledger reports that it could not be read instead of claiming zero usage', async () => {
+  storageFailures.get = true;
+  const tree = await mount(React.createElement(App, { initialScreen: 'usage' }));
+  const rendered = textNodes(tree.toJSON()).join(' \n ');
+
+  expect(rendered).toContain('Usage history could not be read');
+  expect(rendered).toContain('Discard local usage history');
+  // The dangerous failure: totals over data the app never loaded. A confident zero here would
+  // be indistinguishable from a genuinely unused account.
+  expect(rendered).not.toContain('Exact total');
+  expect(rendered).not.toContain('Estimated total');
+  await unmount(tree);
+});
+
+test('a discard that cannot be confirmed is reported as a failure, never as a success', async () => {
+  const { clearUsage } = require('../src/persistence/usageLedger');
+  storageFailures.get = true;
+  const tree = await mount(React.createElement(App, { initialScreen: 'usage' }));
+
+  await press(tree, 'Discard local usage history');
+  const rendered = textNodes(tree.toJSON()).join(' \n ');
+
+  expect(rendered).toContain('could not be discarded');
+  expect(rendered).toContain('Nothing was changed');
+  // Still the failure screen: an unconfirmed clear must not flip the UI to a happy empty state.
+  expect(rendered).toContain('Usage history could not be read');
+  await unmount(tree);
+  storageFailures.get = false;
+  await clearUsage();
+});
+
+test('a confirmed discard clears the ledger and returns the screen to its empty state', async () => {
+  const { clearUsage, recordUsage } = require('../src/persistence/usageLedger');
+  await clearUsage();
+  await recordUsage({
+    runId: 'r', agentId: 'builder', model: 'gpt-4o',
+    promptTokens: 10, completionTokens: 10, totalTokens: 20,
+    basis: 'exact', phase: 'run',
+  });
+  storageFailures.get = true;
+  const tree = await mount(React.createElement(App, { initialScreen: 'usage' }));
+  storageFailures.get = false;
+
+  await press(tree, 'Discard local usage history');
+  const rendered = textNodes(tree.toJSON()).join(' \n ');
+
+  expect(rendered).not.toContain('could not be discarded');
+  // Empty is now a truthful statement: the store confirmed zero rows.
+  expect(rendered).toContain('Exact total');
+  expect(rendered).toContain('0');
   await unmount(tree);
 });

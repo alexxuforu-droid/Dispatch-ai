@@ -6,19 +6,7 @@
  * sends no matter what happens to the cache or to the provider's /models listing.
  */
 
-jest.mock('@react-native-async-storage/async-storage', () => {
-  const store = new Map<string, string>();
-  return {
-    __esModule: true,
-    default: {
-      getItem: async (key: string) => (store.has(key) ? store.get(key)! : null),
-      setItem: async (key: string, value: string) => { store.set(key, value); },
-      removeItem: async (key: string) => { store.delete(key); },
-      clear: async () => { store.clear(); },
-      getAllKeys: async () => [...store.keys()],
-    },
-  };
-});
+jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
 jest.mock('../src/persistence/providerCredentials', () => ({ loadProviderSecret: jest.fn(async () => 'test-key') }));
 
 import {
@@ -115,7 +103,7 @@ describe('ACID TEST: delete the cache and the saved id must still load and send'
 
   test('a provider that fails /models entirely still cannot un-save the model', async () => {
     stubModels([], 500);
-    await expect(refreshModelCatalog({ ...defaultProviderProfile, endpoint: ENDPOINT, model: SAVED_MODEL, imageModel: '' })).rejects.toThrow();
+    await expect(refreshModelCatalog({ ...defaultProviderProfile, endpoint: ENDPOINT, model: SAVED_MODEL, imageModel: '' })).rejects.toThrow('The provider returned HTTP 500.');
     const { bodies } = stubChat();
     const saved = await loadProviderProfile();
     expect(saved.model).toBe(SAVED_MODEL);
@@ -173,5 +161,50 @@ describe('refresh does not gate anything', () => {
     await saveProviderProfile(odd);
     expect((await loadProviderProfile()).model).toBe('vendor::tuned/model-2027-01-01');
     expect(normalizeProviderEndpoint(ENDPOINT)).toBe(ENDPOINT);
+  });
+});
+
+// This is the one preference-gate break that previously slipped through. Every other case here
+// clears the cache before loading the profile, so a `suggestions[0]` fallback in the profile
+// loader never fired and the acid test stayed green while the authority leak was in place.
+// The gap was the absence of a persisted snapshot at the moment the profile is read back.
+describe('a persisted snapshot is still not a preference', () => {
+  test('a saved snapshot cannot become the source of the saved model id', async () => {
+    stubModels(['alpha', 'beta', 'gamma']);
+    const profile = { ...defaultProviderProfile, endpoint: ENDPOINT, model: SAVED_MODEL, imageModel: '' };
+    await refreshModelCatalog(profile);
+    await saveCatalogSnapshot(ENDPOINT, ['alpha', 'beta', 'gamma'], Date.now());
+
+    // The durable artifact is present and usable as a suggestion source...
+    expect((await readCatalogSnapshot(ENDPOINT))?.ids).toEqual(['alpha', 'beta', 'gamma']);
+    expect(providerModelCatalog.lookup(ENDPOINT)).toEqual(['alpha', 'beta', 'gamma']);
+
+    // ...and the saved id still wins, unrewritten.
+    const loaded = await loadProviderProfile();
+    expect(loaded.model).toBe(SAVED_MODEL);
+
+    const { bodies } = stubChat();
+    await completeChat(loaded, [{ role: 'user', content: 'go' }]);
+    expect(bodies[0].model).toBe(SAVED_MODEL);
+  });
+
+  test('a persisted snapshot that omits the saved id leaves it alone too', async () => {
+    stubModels(['alpha', 'beta']);
+    await refreshModelCatalog({ ...defaultProviderProfile, endpoint: ENDPOINT, model: SAVED_MODEL, imageModel: '' });
+    await saveCatalogSnapshot(ENDPOINT, ['alpha', 'beta'], Date.now());
+
+    expect(providerModelCatalog.lookup(ENDPOINT)).not.toContain(SAVED_MODEL);
+    const loaded = await loadProviderProfile();
+    expect(loaded.model).toBe(SAVED_MODEL);
+  });
+
+  test('an empty persisted snapshot cannot blank the saved id', async () => {
+    await saveCatalogSnapshot(ENDPOINT, [], Date.now());
+    providerModelCatalog.forget(ENDPOINT);
+    await rehydrateModelCatalog(providerModelCatalog);
+
+    expect((await readCatalogSnapshot(ENDPOINT))?.ids).toEqual([]);
+    const loaded = await loadProviderProfile();
+    expect(loaded.model).toBe(SAVED_MODEL);
   });
 });

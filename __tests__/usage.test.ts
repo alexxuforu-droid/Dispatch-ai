@@ -9,19 +9,7 @@
  *  - exact and estimated are never summed into one number.
  */
 
-jest.mock('@react-native-async-storage/async-storage', () => {
-  const store = new Map<string, string>();
-  return {
-    __esModule: true,
-    default: {
-      getItem: async (key: string) => (store.has(key) ? store.get(key)! : null),
-      setItem: async (key: string, value: string) => { store.set(key, value); },
-      removeItem: async (key: string) => { store.delete(key); },
-      clear: async () => { store.clear(); },
-      getAllKeys: async () => [...store.keys()],
-    },
-  };
-});
+jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
 jest.mock('../src/persistence/providerCredentials', () => ({ loadProviderSecret: jest.fn(async () => 'test-key') }));
 
 import {
@@ -33,6 +21,7 @@ import {
   parseProviderUsage,
 } from '../src/providers/openai-compatible';
 import { clearUsage, formatTokenCount, isUsageRecord, parseUsageRecords, readUsage, recordUsage, rollUpForRun, rollUpUsage, toTwoSignificantDigits, toUsageRecord } from '../src/persistence/usageLedger';
+import { storageFailures, resetAsyncStorageMock } from './asyncStorageMock';
 import { loadRunHistory, saveRunSnapshot } from '../src/persistence/runStore';
 import type { ProviderProfile } from '../src/persistence/providerProfile';
 import type { Run } from '../src/orchestration/types';
@@ -316,5 +305,50 @@ describe('presentation never overstates precision', () => {
     // Distinction is carried by the ≈ prefix and the (est.) suffix, not by a hue.
     expect(formatTokenCount(100, 'estimated')).toMatch(/^≈ .*\(est\.\)$/);
     expect(formatTokenCount(100, 'exact')).not.toMatch(/≈|\(est\.\)/);
+  });
+});
+
+// The asymmetry is deliberate and is the reason the usage screen has a failure state at all.
+// recordUsage swallows so a provider call that already happened is never sunk by its own
+// accounting; readUsage propagates so the screen can say "could not read" instead of showing
+// a confident empty ledger over data it simply failed to load.
+describe('the ledger error policy is asymmetric on purpose', () => {
+  const row = {
+    runId: 'run-x', agentId: 'builder', model: 'gpt-4o',
+    promptTokens: 40, completionTokens: 83, totalTokens: 123,
+    basis: 'exact' as const, phase: 'run' as const,
+  };
+
+  afterEach(() => { resetAsyncStorageMock(); });
+
+  test('recordUsage resolves and returns the row even when the write fails', async () => {
+    await clearUsage();
+    storageFailures.set = true;
+    const saved = await recordUsage(row);
+    expect(saved.totalTokens).toBe(123);
+    storageFailures.set = false;
+    // The count went missing, not wrong. Nothing was stored, and nothing threw.
+    expect(await readUsage()).toEqual([]);
+  });
+
+  test('recordUsage still resolves when the read-modify-write itself fails', async () => {
+    await clearUsage();
+    storageFailures.get = true;
+    await expect(recordUsage(row)).resolves.toMatchObject({ totalTokens: 123 });
+  });
+
+  test('readUsage rejects when the read fails, rather than reporting an empty ledger', async () => {
+    storageFailures.get = true;
+    await expect(readUsage()).rejects.toThrow('async-storage getItem failed (injected)');
+  });
+
+  test('a failed read is not a silently empty read', async () => {
+    await recordUsage(row);
+    const healthy = await readUsage();
+    expect(healthy).toHaveLength(1);
+    storageFailures.get = true;
+    // The distinction that matters: [] would mean "no usage recorded". A rejection means
+    // "unknown", which is the only reading the screen is allowed to show.
+    await expect(readUsage()).rejects.toThrow('async-storage getItem failed (injected)');
   });
 });

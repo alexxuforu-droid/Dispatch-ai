@@ -2,24 +2,13 @@ import React, { act } from 'react';
 import renderer, { ReactTestRenderer } from 'react-test-renderer';
 
 // Dev-only tree dumper. Uses require() rather than a node-typed import so the repo stays
-// free of an @types/node dependency just to render a snapshot.
-declare const require: (name: string) => any;
+// free of an @types/node dependency just to render a snapshot. No local declaration of
+// `require`: jest hoists mock factories above module scope, so a local shadow would make
+// the shared-factory call below an illegal out-of-scope reference.
 const fs = require('fs');
 const path = require('path');
 
-jest.mock('@react-native-async-storage/async-storage', () => {
-  const store = new Map<string, string>();
-  return {
-    __esModule: true,
-    default: {
-      getItem: async (key: string) => (store.has(key) ? store.get(key)! : null),
-      setItem: async (key: string, value: string) => { store.set(key, value); },
-      removeItem: async (key: string) => { store.delete(key); },
-      clear: async () => { store.clear(); },
-      getAllKeys: async () => [...store.keys()],
-    },
-  };
-});
+jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
 
 jest.mock('react-native-safe-area-context', () => {
   const ReactActual = require('react');
@@ -49,14 +38,16 @@ function setViewport(width: number, height: number) {
   mockHeight = height;
 }
 
-async function snapshot(name: string, element: React.ReactElement): Promise<void> {
+async function snapshot(name: string, element: React.ReactElement): Promise<string> {
   let tree!: ReactTestRenderer;
   await act(async () => {
     tree = renderer.create(element);
   });
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  fs.writeFileSync(path.join(OUT_DIR, `${name}.json`), JSON.stringify(tree.toJSON(), null, 1), 'utf8');
+  const json = JSON.stringify(tree.toJSON(), null, 1);
+  fs.writeFileSync(path.join(OUT_DIR, `${name}.json`), json, 'utf8');
   await act(async () => { tree.unmount(); });
+  return json;
 }
 
 const SCREENS = ['dispatch', 'teams', 'agents', 'runs', 'reviews', 'artifacts', 'board', 'workflows', 'plugins', 'design', 'settings'] as const;
@@ -83,7 +74,14 @@ test('capture the usage screen empty', async () => {
   const { clearUsage } = require('../src/persistence/usageLedger');
   await clearUsage();
   const App = require('../App').default;
-  await snapshot('screen-usage-empty-1440', React.createElement(App, { initialScreen: 'usage' }));
+  const json = await snapshot('screen-usage-empty-1440', React.createElement(App, { initialScreen: 'usage' }));
+
+  // A capture with no assertion proves nothing. An empty ledger must still render both
+  // aggregates at zero, and must still carry the method statement.
+  expect(json).toContain('Exact total');
+  expect(json).toContain('Estimated total');
+  expect(json).toContain('Every token your agents spend');
+  expect(json).toContain('never added together');
 }, 60000);
 
 // Seeded through the real ledger write path, not injected into storage, so the capture
@@ -119,7 +117,19 @@ test('capture the usage screen with a mixed exact and estimated ledger', async (
     });
   }
   const App = require('../App').default;
-  await snapshot('screen-usage-1440', React.createElement(App, { initialScreen: 'usage' }));
+  const json = await snapshot('screen-usage-1440', React.createElement(App, { initialScreen: 'usage' }));
+
+  // Seven exact rows summing to 118,746 shown verbatim, three estimates summing to 17,313
+  // rounded to two significant digits and tagged. The comment above this test claims the
+  // ledger exercises the same write path a real run would; these assertions are what make
+  // that claim checkable rather than decorative.
+  expect(json).toContain('Exact total');
+  expect(json).toContain('118,746');
+  expect(json).toContain('Estimated total');
+  expect(json).toContain('\u2248 17,000 (est.)');
+  // Still no grand total anywhere in the rendered tree.
+  expect(json).not.toContain('136,059');
+  expect(json).not.toContain('136059');
 }, 60000);
 
 // Settings with a stale model catalog: suggestions must be gone, the "last checked" note
@@ -136,7 +146,20 @@ test('capture settings with a stale model catalog', async () => {
   providerModelCatalog.record('https://api.openai.com/v1', ['stale-a', 'stale-b'], Date.now() - 42 * 60 * 1000);
   await saveCatalogSnapshot('https://api.openai.com/v1', ['stale-a', 'stale-b'], Date.now() - 42 * 60 * 1000);
   const App = require('../App').default;
-  await snapshot('screen-settings-stale-1440', React.createElement(App, { initialScreen: 'settings' }));
+  const json = await snapshot('screen-settings-stale-1440', React.createElement(App, { initialScreen: 'settings' }));
+
+  // Three claims, three assertions. Previously this test only wrote a file, so the comment
+  // above it was unbacked.
+  // (a) the stale suggestions are not offered...
+  expect(json).not.toContain('stale-a');
+  expect(json).not.toContain('stale-b');
+  // (b) the staleness is actually disclosed to the user, not just computed...
+  expect(json).toContain('It may be out of date');
+  // ...and the advisory framing is still there.
+  expect(json).toContain('It only ever offers suggestions');
+  // (c) ...and the saved id survives untouched, free text, nothing disabled.
+  expect(json).toContain('vendor::tuned/model-2027-01-01');
+  expect(json).not.toContain('"editable": false');
 }, 60000);
 
 test('capture the dispatch screen at narrow widths', async () => {

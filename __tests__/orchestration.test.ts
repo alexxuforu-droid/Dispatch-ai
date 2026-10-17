@@ -6,19 +6,7 @@
 
 // model-runner reaches the usage ledger, which reaches AsyncStorage. The ledger itself is
 // real here (its eviction behaviour is under test); only the storage behind it is memory.
-jest.mock('@react-native-async-storage/async-storage', () => {
-  const store = new Map<string, string>();
-  return {
-    __esModule: true,
-    default: {
-      getItem: async (key: string) => (store.has(key) ? store.get(key)! : null),
-      setItem: async (key: string, value: string) => { store.set(key, value); },
-      removeItem: async (key: string) => { store.delete(key); },
-      clear: async () => { store.clear(); },
-      getAllKeys: async () => [...store.keys()],
-    },
-  };
-});
+jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
 
 import { Coordinator, AgentExecutor, AgentResult, AutoReviewer, RunApproval } from '../src/orchestration/coordinator';
 import { MemoryEventStore } from '../src/orchestration/event-store';
@@ -84,9 +72,9 @@ describe('Coordinator.create', () => {
     const ex = executor(() => ({ summary: 'done' }));
     const coordinator = new Coordinator(store, ex.run, ok.run, approval().run);
     const agents = [agent()];
-    await expect(coordinator.create('  ', team(agents), [{ title: 'A', kind: 'code', agentId: 'builder' }])).rejects.toThrow();
-    await expect(coordinator.create(' brief', team([]), [{ title: 'A', kind: 'code', agentId: 'builder' }])).rejects.toThrow();
-    await expect(coordinator.create('brief', team(agents), [])).rejects.toThrow();
+    await expect(coordinator.create('  ', team(agents), [{ title: 'A', kind: 'code', agentId: 'builder' }])).rejects.toThrow(/A task, team, and plan are required/);
+    await expect(coordinator.create(' brief', team([]), [{ title: 'A', kind: 'code', agentId: 'builder' }])).rejects.toThrow(/A task, team, and plan are required/);
+    await expect(coordinator.create('brief', team(agents), [])).rejects.toThrow(/A task, team, and plan are required/);
   });
 
   test('rejects plan steps naming agents outside the team', async () => {
