@@ -955,3 +955,89 @@ an app defect — a mistake already made once this session and caught.
 
 `8f3b408 Initial commit`, 24 untracked/modified entries, **nothing committed** — the user
 commits on request only. `git clean` and `git stash -u` remain forbidden on this tree.
+
+---
+
+# APPEND 10 — committed, and the native build UNBLOCKED
+
+## COMMITTED
+
+The user explicitly asked for commits ("commit more often"), which is the authorisation the
+standing "never commit" default was waiting on.
+
+- Extended `.gitignore`: the `windows/` tree is **1.4 GB**, almost all of it generated — a
+  500 MB `pch.pch` plus a 50 MB pdb per module per configuration. Now excludes
+  `windows/**/{obj,bin,AppPackages,x64,ARM64,Packages}/` plus `*.pdb *.pch *.lib *.exp
+  *.msix *.appx`. Native source (`.cpp .h .vcxproj .wapproj .props .sln .xml .png .ico`) is
+  unaffected — a judge proved this with `git check-ignore --no-index` over all 332 tracked
+  files: zero matches.
+- Secret-scanned the staged set before committing: no `.vault` / `state.json` / `.env*` /
+  key-shaped strings. The only `sk-live-` string in the repo is a fixture inside
+  `__tests__/orchestration.test.ts`, which exists to test the secret scanner.
+- `0d49411` — 288 files, 2.57 MB. Working tree clean. **A `git clean` can no longer destroy
+  the session's work.**
+
+## The native build was NOT blocked by a missing UWP workload
+
+I had recorded `MSB8020 ... application Type UWP cannot be found` as an environmental wall
+for several rounds. **That diagnosis was wrong.** A worktree experiment (`Z:\Projects\wt-uwp`,
+branch `uwp-removal-experiment`) found the real cause and produced a working build:
+
+- `@react-native-async-storage`'s `ReactNativeAsyncStorage.vcxproj` **hardcodes
+  `PlatformToolset` v143** (line 76). `Z:\BuildTools18` ships only **v145**. MSBuild reports
+  a missing *toolset*, which reads exactly like a missing *workload*.
+- The app's own `DispatchNative.vcxproj` requests **v145** (line 53) and is desktop-only —
+  it imports `Microsoft.ReactNative.Composition.CppApp.props`, never the UWP props.
+- `Z:\BuildTools` is genuinely UWP-less (`Application Type` contains only `Linux`), but that
+  is irrelevant: the build uses `Z:\BuildTools18` throughout.
+
+### The working command
+```
+cmd /c "call Z:\BuildTools18\VC\Auxiliary\Build\vcvars64.bat && ^
+  Z:\BuildTools18\MSBuild\Current\Bin\MSBuild.exe ^
+  Z:\Projects\Dispatch AI\native\windows\DispatchNative.sln ^
+  /restore /m:1 /nodeReuse:false /p:CL_MPCount=1 /p:Configuration=Debug /p:Platform=x64 ^
+  /p:WindowsTargetPlatformVersion=10.0.26100.0 /p:TargetPlatformVersion=10.0.26100.0 ^
+  /p:RunCodegenWindows=false /p:RunAutolinkCheck=false /p:PlatformToolset=v145"
+```
+Each property earns its place:
+- `/p:PlatformToolset=v145` — overrides AsyncStorage's hardcoded v143. **The whole blocker.**
+- `/p:TargetPlatformVersion=10.0.26100.0` — `ExperimentalFeatures.props` sets
+  `RnwNewArch=true`, whose props chain pins 10.0.22621.0; only 26100 is installed.
+- `/restore` — the app project had never been NuGet-restored (`CppWinRTIncludes.h` missing).
+- `/p:RunAutolinkCheck=false` — the shipped RN CLI has no `autolink-windows` subcommand.
+  The generated autolink files are already committed, so the check is validation, not a
+  generator.
+- `/m:1 /p:CL_MPCount=1` — memory headroom; without it the compiler dies with
+  `C3859: Failed to create virtual memory for PCH`. Costs time, not correctness.
+
+**Lesson recorded:** four build attempts were spent treating a *toolset version mismatch* as
+a *missing workload*. When a build wall names a component, check whether the component exists
+under a different version before concluding the category is unavailable. A fresh-context
+subagent in an isolated worktree found it in one run where I had been stuck for four. The
+user's suggestion to fan out subagents across worktrees is what broke the deadlock.
+
+## Gate re-judged after the post-gate edits
+
+A fresh judge on the committed state: **code 9.6 PASS, tests 9.4 FAIL.** It verified every
+PRODUCT.md claim against the code (line-level diffs -> `diffLines.ts:14-42` plus
+`RunWorkspace.tsx:163`; token accounting -> all 7 call sites; the honesty sentences ->
+proven, not asserted, by `catalog.test.ts:84-138`). It also proved the `.gitignore` additions
+are not over-broad.
+
+The load-bearing failure: **`scripts/render-snapshot.mjs` had zero automated coverage.** Jest's
+preset never touched `scripts/`, so its flex arithmetic, percentage resolution and asset
+fallback were guarded only by manual runs. Fixed with `__tests__/render-snapshot.test.ts` —
+5 tests driving the real CLI as a subprocess against fixture trees, covering malformed
+percentages, `flexBasis` with `flexGrow`, a missing asset directory, and a real asset
+directory. Red-proofed by disabling the `PROJECT_ASSETS` branch: `Expected: > 1346,
+Received: 1346`.
+
+## Still open
+
+- **320px layout.** With the build unblocked, a real device screenshot can finally close
+  this. Not yet taken.
+- App has never been launched; per the user's instruction, nothing goes on their desktop.
+- AsyncStorage mock duplicated across 5 test files (hygiene, judges confirmed).
+- DesignStudio hardcodes ~37 off-token hex values; measured, all decorative borders, left
+  as deliberate low-contrast chrome.
