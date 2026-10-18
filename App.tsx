@@ -52,7 +52,7 @@ function App({ initialScreen = 'dispatch' }: { initialScreen?: Screen } = {}) {
   const [planningDebate, setPlanningDebate] = useState(false);
   const [checkpointPolicy, setCheckpointPolicy] = useState<'plan-only' | 'each-wave'>('plan-only');
   const [maxConcurrency, setMaxConcurrency] = useState(0);
-  const [peerApprovalEnabled, setPeerApprovalEnabled] = useState(true);
+  const [peerApprovalEnabled, setPeerApprovalEnabled] = useState(false);
   const [agentModels, setAgentModels] = useState<Record<string, string>>({});
   const [agentAvatars, setAgentAvatars] = useState<Record<string, number>>({});
   const [agentPermissions, setAgentPermissions] = useState<Record<string, AgentPermissions>>({});

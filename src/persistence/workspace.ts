@@ -46,7 +46,13 @@ export const defaultWorkspaceSettings: WorkspaceSettings = {
   planningDebate: false,
   checkpointPolicy: 'plan-only',
   maxConcurrency: 0,
-  peerApprovalEnabled: true,
+  // Default OFF. A higher-ranked agent auto-approving another agent's writes is the Kiro
+  // bypass: a two-person gate defeated by an inherited permission. Here the "approver" is
+  // another model whose only credential is a rank comparison, and it writes straight to disk
+  // at model-runner.ts:416-427 with no human in the path. An explicit opt-in is the right
+  // shape for that. The reader below still honours a stored `true`, so anyone who has already
+  // chosen it keeps it.
+  peerApprovalEnabled: false,
   automaticCodeReview: true,
   automaticImageReview: true,
 };
