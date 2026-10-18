@@ -148,6 +148,9 @@ function App({ initialScreen = 'dispatch' }: { initialScreen?: Screen } = {}) {
     if (!brief || runBusy) return;
     if (!roles.length) { designReturnAfterRun.current = false; openTeamPicker(); setNotice('Choose an agent team, then start the task again.'); return; }
     if (!providerReady) { designReturnAfterRun.current = false; setNotice('Connect an OpenAI-compatible provider and choose a model in Settings.'); setScreen('settings'); return; }
+    // Same re-entrancy window as approvePlan: runBusy is render-time state, so a double-press
+    // passes twice and the second controller orphans the first. Guard on the ref, synchronously.
+    if (runController.current) return;
     const controller = new AbortController(); runController.current = controller;
     setCancelRequested(false); setNotice(''); setRun(null); setPendingBrief(brief); setDraft(''); setRunBusy(true);
     try {
@@ -164,6 +167,11 @@ function App({ initialScreen = 'dispatch' }: { initialScreen?: Screen } = {}) {
   };
   const approvePlan = async () => {
     if (!run || !['queued', 'cancelled', 'failed', 'needs-approval'].includes(run.status) || runBusy) return;
+    // runBusy is render-time state, so two presses inside one frame both read false and both pass.
+    // The second then overwrites runController.current, leaving the first executor running with no
+    // abort path -- cancel could only ever reach the newer one. This ref is set synchronously, so
+    // it closes the window regardless of when React commits.
+    if (runController.current) return;
     const controller = new AbortController(); runController.current = controller;
     setCancelRequested(false); setRunBusy(true); setNotice('');
     try {
