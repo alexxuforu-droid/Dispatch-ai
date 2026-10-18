@@ -1243,3 +1243,101 @@ nested flex. The cards are `flexBasis: 300` with `flexGrow: 1` inside a `maxWidt
 at 1440 each card is ~424px wide against a ~225px string, and the real compositor has room the
 rasterizer does not model. I am recording these as rasterizer artefacts, not app defects,
 because that is the honest reading and I cannot prove otherwise without a device.
+# APPEND 14 - the council round 2, and what it cost me to run it wrong
+
+Round 1 of the feature council was handed **18 candidates**. That number was mine: I took nine
+research reports, ~100 raw ideas, and compressed them by judgement. Two researchers independently
+converged on the same defect the compression created - the memory inspector counted as `[2]`
+researchers when both read the same OpenAI Dots limitations page. One event, two marks.
+
+Round 2 removed the step. All ~100 items went in, grouped **by originating researcher rather
+than by my clustering**, each tagged with how many independent researchers raised it and with an
+evidence tag (`incident` / `measurement` / `request` / `convention`). The brief told the personas
+explicitly that the convergence count is a hint and not a verdict, that a count of 1 can still be
+the strongest item, and that clustering was their job.
+
+That instruction worked. Both false convergences were caught by the personas, not by me - memory
+again, and the rule-file translator, whose `[3]` turned out to be 6,687 reactions on a *single*
+Anthropic issue thread: one request measured loudly, not three researchers agreeing.
+
+**The verdict.** 62 killed with a stated mechanism, 4 committed, 1 reserve, and 6 holes named that
+no researcher proposed. All five personas converged on the same slot 0 - fix the review gate's
+inputs before ranking anything that depends on a trustworthy gate - without coordination.
+
+**Two findings that changed the code, not just the plan:**
+
+1. `peerApprovalEnabled` defaulted to `true`, and `model-runner.ts:416-427` applies files to disk
+   with no human in the path when a higher-ranked agent's review returns a pass. That is the Kiro
+   bypass - a two-person gate defeated by an inherited permission - except the inherited permission
+   is a rank integer. `approvedBy` is then set to a name string, which is a label, not an identity.
+   Two personas found it independently. Fixed in `c2cf8db`; the reader still honours an explicitly
+   stored `true`, so only new installs get the safe default.
+
+2. The token profile was verified in the source rather than accepted: `coordinator.ts:80` passes
+   `priorMessages: run.messages` and `model-runner.ts:130` flattens every agent-visible message
+   into the prompt, so per-run token cost grows with run length, not step count. `maxConcurrency`
+   defaults to `0` = every ready item at once. A spend cap is therefore the prerequisite for
+   unbounded fan-out being safe, not an optional companion to it. **Not changed** - parallelism is
+   the product's point and the default is the user's call.
+
+**A correction to a number I had been quoting.** METR's 19% slowdown describes Feb-Jun 2025
+tooling. METR's Feb 2026 redesign post reports **-18%, a speedup**, CI [-38%, +9%]. The footnote
+that matters for us is the one I had not read: METR **could not measure developers running multiple
+agents concurrently**, because they do other work while waiting. Orchestration demand is real; its
+measurement is not. Shore's 5-month figure could not be verified by the persona that raised it and
+is now marked unverified rather than repeated.
+
+**The gravestone that killed my largest cluster.** Cursor deleted its own WorkTrees - 12-15K LoC
+replaced by a ~200 LoC skill, stated reason "usage was very low relative to the complexity it
+added." My list had **twelve** items proposing parallel fan-out, isolation and consolidation.
+Convergence there was recognizability, not demand. The best-funded company in the space reached the
+conclusion and recorded it; I was about to spend a quarter rediscovering it.
+
+**Constraint 4 was wrong by roughly 5x.** I told the council "two of these may already be shipped."
+In fact about a dozen were: the plan gate, checkpoints, resume, secret scan, credential vault,
+per-agent default-deny, approved agent memory, run history, and the adversarial loop already
+running as rank-based peer approval. The candidate list had never been checked against the product
+it proposed to extend.
+
+**What the list does not contain.** Not one of ~100 items deletes anything. A hundred additions to
+a fourteen-screen app with zero subtractions is the 28,000-star failure reproduced exactly. And the
+single largest hole was the mechanical assertion-weakening detector - the best-evidenced agent
+failure in the entire corpus (RepoRescue, agents edit failing tests *even when explicitly told not
+to*) had exactly one coarse representative, which was a path-class gate. That is now committed as
+a mechanical detector over `diffLines.ts`, not as a reviewer instruction, because runtime blocking
+works where prompting fails.
+
+## Workflows, read from the source
+
+Asked what the Workflows screen actually does. It is less than the UI implies:
+
+```ts
+type DispatchWorkflow = { id, name, description, brief, teamId?, mission? };
+```
+
+A saved brief with an optional pinned team and mission. Launching (`App.tsx:257`) resolves the
+team, sets the mission, drops the brief into the draft, switches to Dispatch. Six built-in
+starters, each a brief lifted from a mission preset. Save-run-as-workflow (`App.tsx:224`) captures
+`brief`, `teamId`, `mission` - **not the plan**.
+
+So the honest description is a bookmark. It saves intent; the app re-derives the plan every run.
+
+Four consequences, all verified:
+- **The plan is regenerated every launch.** No way to run it "exactly like last time," and nothing
+  to tune because the outcome is not stored.
+- **No parameters.** `brief` is fixed text, so "sweep every module in `src/`" needs N near-identical
+  workflows.
+- **No run history.** `types.ts` has no `workflowId` on a run, so there is no success rate and no
+  way to answer which workflow produced a given run.
+- **A deleted team silently falls back.** `find(c => c.id === workflow.teamId) ?? find(c => c.id
+  === activeTeamId)` - rename or delete the pinned team and the run proceeds with a different
+  composition than the workflow names, with no warning. This is the same bug class as the stale
+  catalog chips: a guard that computes a fact and never surfaces it.
+
+Also: `.slice(0, 50)` silently evicts the oldest workflow on the 51st save, and briefs truncate at
+12,000 chars against a staging layer that caps `find` at 12,000 and `replacement` at 80,000.
+
+The cheapest genuinely-useful increment is one line plus one write: store `workflowId` on the run.
+No new screen, no new decision surface, and it is the thing that makes "how often does this
+actually work?" answerable. Everything more ambitious - pinned plans, parameters, history - is three
+more decision surfaces on a fourteen-screen app, which is why every persona killed the big versions.

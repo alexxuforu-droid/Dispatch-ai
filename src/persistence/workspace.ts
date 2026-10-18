@@ -61,8 +61,18 @@ export async function loadWorkspaceSettings(): Promise<WorkspaceSettings> {
   const raw = await AsyncStorage.getItem(SETTINGS_KEY);
   if (!raw) return defaultWorkspaceSettings;
   try {
-    const value = JSON.parse(raw) as Record<string, unknown>;
-    if (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) return defaultWorkspaceSettings;
+    return readWorkspaceSettings(JSON.parse(raw));
+  } catch {
+    return defaultWorkspaceSettings;
+  }
+}
+
+/** Pure reader for a parsed settings blob. Split out of loadWorkspaceSettings so the migration rules are testable without storage. */
+export function readWorkspaceSettings(raw: unknown): WorkspaceSettings {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return defaultWorkspaceSettings;
+  const value = raw as Record<string, unknown>;
+  if (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) return defaultWorkspaceSettings;
+  {
     const teams = Array.isArray(value.teams) ? value.teams.flatMap(entry => {
       if (!entry || typeof entry !== 'object') return [];
       const team = entry as Record<string, unknown>;
@@ -91,7 +101,11 @@ export async function loadWorkspaceSettings(): Promise<WorkspaceSettings> {
       planningDebate: value.planningDebate === true,
       checkpointPolicy: value.checkpointPolicy === 'each-wave' ? 'each-wave' : 'plan-only',
       maxConcurrency: typeof value.maxConcurrency === 'number' && Number.isInteger(value.maxConcurrency) && value.maxConcurrency >= 0 && value.maxConcurrency <= 8 ? value.maxConcurrency : 0,
-      peerApprovalEnabled: value.peerApprovalEnabled !== false,
+      // Only an explicit `true` arms peer auto-apply. `!== false` was wrong: settings blobs from
+      // versions 1-3 (all still accepted at :65) never carried this field, so they parsed to
+      // `undefined` and every upgraded install silently armed an agent that writes to disk with
+      // no human in the path. Absent means absent, not opted-in.
+      peerApprovalEnabled: value.peerApprovalEnabled === true,
       customRoles: Array.isArray(value.customRoles) ? value.customRoles.flatMap(entry => {
         if (!entry || typeof entry !== 'object') return [];
         const role = entry as Record<string, unknown>;
@@ -118,8 +132,6 @@ export async function loadWorkspaceSettings(): Promise<WorkspaceSettings> {
       automaticCodeReview: typeof value.automaticCodeReview === 'boolean' ? value.automaticCodeReview : true,
       automaticImageReview: typeof value.automaticImageReview === 'boolean' ? value.automaticImageReview : true,
     };
-  } catch {
-    return defaultWorkspaceSettings;
   }
 }
 
