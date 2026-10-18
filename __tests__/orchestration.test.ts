@@ -1028,6 +1028,39 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
       expect(workspace.applyProjectFile).toHaveBeenCalledWith('Z:/gate-demo', 'src/config.ts', '', 'export const port = 8080;\n', true);
     });
 
+    // The original defect: changeDetails was sliced to 30,000 chars while the apply list was
+    // unbounded, so a four-file proposal showed the reviewer three files and wrote all four.
+    // Auto-apply must refuse whenever the reviewer could not see everything.
+    test('peer apply refuses when the reviewer could not see every proposed file', async () => {
+      const fourFiles = JSON.stringify({
+        summary: 'Added four modules.',
+        messages: [{ to: 'team', kind: 'handoff', text: 'Four modules staged for review.' }],
+        changes: [
+          { path: 'src/one.ts', content: 'export const one = 1;\n' },
+          { path: 'src/two.ts', content: 'export const two = 2;\n' },
+          { path: 'src/three.ts', content: 'export const three = 3;\n' },
+          { path: 'src/four.ts', content: 'export const four = 4;\n' },
+        // 15,000 chars each: four of them cannot fit a 30,000-char review budget, but each is
+        // under the 80,000 cap that would have made parseAgentResponse drop the whole proposal.
+        ].map((_, index) => ({ ..._, content: `export const v = ${index};\n${'// padding line to force a large payload\n'.repeat(550)}` })),
+      });
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
+      const run = await runGate({ plan: codeStep, builder: fourFiles, reviewCode: true, reviewImages: false });
+      // Held for a human rather than applied.
+      expect(run.status).toBe('needs-approval');
+      expect(workspace.applyProjectFile).not.toHaveBeenCalled();
+      expect(run.messages.some(message => message.text.includes('Auto-apply is refused'))).toBe(true);
+      // And it names the files that went unreviewed, rather than silently dropping them.
+      expect(run.messages.some(message => message.text.includes('Not reviewed:'))).toBe(true);
+    });
+
+    test('peer apply still proceeds when every proposed file fits the review budget', async () => {
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
+      const run = await runGate({ plan: codeStep, builder: cleanProposal, reviewCode: true, reviewImages: false });
+      expect(run.status).toBe('completed');
+      expect(workspace.applyProjectFile).toHaveBeenCalledTimes(1);
+    });
+
     test('a later review of the same item skips an already-applied change instead of re-applying it', async () => {
       const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
       const modelRunner = require('../src/orchestration/model-runner') as typeof import('../src/orchestration/model-runner');
