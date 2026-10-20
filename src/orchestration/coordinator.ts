@@ -33,9 +33,12 @@ export class Coordinator {
   }
 
   async execute(run: Run, team: Team, signal?: AbortSignal): Promise<Run> {
+    // The status gate lives outside the try on purpose. A refused resume must reject the call,
+    // not fall into the catch below, which would stamp a terminal run (a completed one, say) as
+    // failed and persist that lie.
+    if (!['queued', 'cancelled', 'failed', 'needs-approval'].includes(run.status)) throw new Error('This run is not waiting to start or resume.');
     try {
       throwIfAborted(signal);
-      if (!['queued', 'cancelled', 'failed', 'needs-approval'].includes(run.status)) throw new Error('This run is not waiting to start or resume.');
       const resumeStatuses = new Set(['cancelled', 'failed', 'running', 'needs-approval']);
       const isResuming = run.status !== 'queued';
       const retryItems = isResuming ? run.items.filter(item => resumeStatuses.has(item.status)) : [];
@@ -165,6 +168,10 @@ export class Coordinator {
       throwIfAborted(signal);
       run.status = 'completed';
     } catch (error) {
+      // A device that cannot save is not a run that failed. Bookkeeping failures are rethrown
+      // with the run state left as it was, so a finished run is never rewritten as failed by
+      // a storage hiccup. Work failures still fail the run, as before.
+      if (error instanceof RunStoreError) throw error;
       const cancelled = signal?.aborted === true || (error instanceof Error && error.name === 'AbortError');
       run.status = cancelled ? 'cancelled' : 'failed';
       const detail = cancelled ? 'Run cancelled by you.' : error instanceof Error ? error.message : String(error);
@@ -176,7 +183,16 @@ export class Coordinator {
     run.updatedAt = new Date().toISOString(); await this.emit(run.id, 'run.status', { status: run.status }); return run;
   }
 
-  private async emit(runId: string, type: RunEvent['type'], payload: unknown) { await this.store.append({ runId, type, payload, at: new Date().toISOString() }); }
+  private async emit(runId: string, type: RunEvent['type'], payload: unknown) {
+    try { await this.store.append({ runId, type, payload, at: new Date().toISOString() }); }
+    catch (error) { throw new RunStoreError(error); }
+  }
+}
+
+/** A device-storage failure while recording run events. Distinct from a work failure: the run's work may be fine. */
+export class RunStoreError extends Error {
+  readonly cause: unknown;
+  constructor(cause: unknown) { super(cause instanceof Error ? cause.message : String(cause)); this.name = 'RunStoreError'; this.cause = cause; }
 }
 
 function throwIfAborted(signal?: AbortSignal) {

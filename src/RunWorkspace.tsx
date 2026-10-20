@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Run } from './orchestration/types';
 import { diffLines } from './orchestration/diffLines';
-import { steerActiveRun } from './orchestration/model-runner';
-import { colors, typography } from './theme';
+import { codeApplySecretBlock, steerActiveRun } from './orchestration/model-runner';
+import { FocusPressable } from './Reveal';
+import { colors, type, typography } from './theme';
 
 type RunChangeAction = (run: Run, changeId: string) => void | Promise<void>;
 type ArtifactAction = (run: Run, artifactId: string) => void;
@@ -12,7 +13,7 @@ export function RunRoom({ run, busy, onPause, onResume, onResults, onUpdate }: {
   run: Run | null;
   busy: boolean;
   onPause: () => void;
-  onResume: () => void;
+  onResume: (run: Run) => void;
   onResults: () => void;
   onUpdate: (run: Run) => void;
 }) {
@@ -62,7 +63,7 @@ export function RunRoom({ run, busy, onPause, onResume, onResults, onUpdate }: {
     <View style={styles.actions}>
       {busy ? <ActionButton label="Pause run" onPress={onPause} /> : null}
       {!busy && ['queued', 'cancelled', 'failed', 'needs-approval'].includes(run.status)
-        ? <ActionButton label="Resume run" onPress={onResume} /> : null}
+        ? <ActionButton label="Resume run" onPress={() => onResume(run)} /> : null}
       <ActionButton label="Open results & receipt →" onPress={onResults} />
     </View>
 
@@ -106,9 +107,13 @@ export function RunRoom({ run, busy, onPause, onResume, onResults, onUpdate }: {
   </ScrollView>;
 }
 
-export function ResultsStudio({ run, history, onApply, onReject, onAcceptArtifact, onSaveRecipe, onUndo, onOpenRun }: {
+export function ResultsStudio({ run, history, projectRoot, applyingChanges = [], notice = '', onDismissNotice, onApply, onReject, onAcceptArtifact, onSaveRecipe, onUndo, onOpenRun }: {
   run: Run | null;
   history: Run[];
+  projectRoot: string;
+  applyingChanges?: string[];
+  notice?: string;
+  onDismissNotice?: () => void;
   onApply: RunChangeAction;
   onReject: RunChangeAction;
   onAcceptArtifact: ArtifactAction;
@@ -117,6 +122,7 @@ export function ResultsStudio({ run, history, onApply, onReject, onAcceptArtifac
   onOpenRun: (run: Run) => void;
 }) {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const [fullChangeId, setFullChangeId] = useState<string | null>(null);
   const activeRun = run ?? history[0] ?? null;
   const imageVersions = useMemo(() => activeRun?.artifacts.filter(artifact => artifact.kind === 'image') ?? [], [activeRun]);
   const foundSelectedIndex = imageVersions.findIndex(artifact => artifact.id === selectedArtifactId);
@@ -132,7 +138,7 @@ export function ResultsStudio({ run, history, onApply, onReject, onAcceptArtifac
     <Text style={styles.kicker}>RESULTS STUDIO · RUN RECEIPT</Text>
     <Text style={styles.title}>{activeRun.mission?.name ?? 'Run results'}</Text>
     <Text style={styles.dim}>{activeRun.brief}</Text>
-    <View style={styles.row}>
+    {notice ? <View style={styles.statusNotice}><Text accessibilityRole="alert" style={styles.statusNoticeText}>{notice}</Text>{onDismissNotice ? <ActionButton label="Dismiss notice" onPress={onDismissNotice} /> : null}</View> : null}    <View style={styles.row}>
       <Metric>{activeRun.status.toUpperCase()}</Metric>
       <Metric>{activeRun.items.length} assignments</Metric>
       <Metric>{activeRun.messages.length} messages</Metric>
@@ -158,32 +164,48 @@ export function ResultsStudio({ run, history, onApply, onReject, onAcceptArtifac
     {codeChanges.length ? <>
       <Text style={styles.section}>Code review</Text>
       {codeChanges.map(change => {
-        const canApply = !change.appliedAt && !change.rejectedAt && !change.revertedAt && !change.supersededAt;
+        const itemStatus = activeRun.items.find(item => item.id === change.itemId)?.status;
+        const secretBlock = codeApplySecretBlock(change);
+        const canApply = !!projectRoot && ['done', 'needs-approval'].includes(itemStatus ?? '') && !change.appliedAt && !change.rejectedAt && !change.revertedAt && !change.supersededAt && !secretBlock;
+        const applying = applyingChanges.includes(change.id);
         const canReject = !change.appliedAt && !change.revertedAt && !change.supersededAt && !change.rejectedAt;
         const diff = diffLines(change.before, change.after);
-        const diffLabel = diff.identical
-          ? 'NO CHANGES'
-          : change.createOnly || !change.before ? `NEW FILE · +${diff.added}` : `DIFF · +${diff.added} -${diff.removed}`;
+        const isNewFile = change.createOnly || !change.before;
+        const showFull = fullChangeId === change.id;
+        const diffLabel = isNewFile ? `NEW FILE · +${diff.added}` : diff.identical ? 'NO CHANGES' : `DIFF · +${diff.added} -${diff.removed}`;
         return <View key={change.id} style={styles.card}>
           <Text style={styles.name}>{change.path} · revision {change.attempt} · {change.createdBy}</Text>
+          <View style={styles.actions}>
+            <Text style={styles.diffLabel}>{diffLabel}</Text>
+            <ActionButton label={showFull ? 'Hide full contents' : 'Show full contents'} accessibilityLabel={showFull ? 'Hide full contents: the file before and after this change' : 'Show full contents: the file before and after this change'} expanded={showFull} onPress={() => setFullChangeId(showFull ? null : change.id)} />
+          </View>
           <ScrollView horizontal>
             <View>
-              <Text style={styles.diffLabel}>{diffLabel}</Text>
-              {diff.identical
+              {diff.identical && !isNewFile
                 ? <Text style={styles.code}>Contents already match.</Text>
-                : diff.lines.map((line, index) => <Text key={index} selectable style={[line.kind === 'meta' ? styles.dim : null, styles.code]}>
-                  {{ add: '+ ', remove: '- ', context: '  ', meta: '' }[line.kind]}{line.text}
-                </Text>)}
+                : diff.lines.length ? diff.lines.map((line, index) => <View key={index} style={styles.diffRow}>
+                  <Text style={styles.lineNumber}>{line.kind === 'add' ? line.newLineNumber : line.kind === 'remove' ? line.oldLineNumber : line.oldLineNumber}</Text>
+                  <Text selectable style={[styles.code, line.kind === 'add' && styles.diffAdded, line.kind === 'remove' && styles.diffRemoved, line.kind === 'meta' && styles.dim]}>
+                    {{ add: '+ ', remove: '- ', context: '  ', meta: '' }[line.kind]}{line.text}
+                  </Text>
+                </View>) : <Text style={styles.dim}>Empty file · nothing to preview.</Text>}
             </View>
           </ScrollView>
+          {showFull ? <View>
+            <Text style={styles.diffLabel}>COMPLETE FILE BEFORE THIS CHANGE</Text>
+            <ScrollView horizontal><Text selectable style={styles.code}>{change.before || 'This file does not exist yet.'}</Text></ScrollView>
+            <Text style={styles.diffLabel}>COMPLETE FILE AFTER THIS CHANGE</Text>
+            <ScrollView horizontal><Text selectable style={styles.code}>{change.after}</Text></ScrollView>
+          </View> : null}
+          {secretBlock ? <Text style={styles.dim}>{secretBlock}</Text> : null}
           <View style={styles.actions}>
             {change.appliedAt && !change.revertedAt
               ? <ActionButton label="Undo applied change" onPress={() => onUndo(activeRun, change.id)} />
               : change.revertedAt ? <Text style={styles.badge}>REVERTED</Text>
-                : <ActionButton label="Apply selected change" disabled={!canApply} onPress={() => onApply(activeRun, change.id)} />}
+                : change.rejectedAt ? <Text style={styles.badge}>REJECTED</Text>
+                  : change.supersededAt ? <Text style={styles.badge}>SUPERSEDED</Text>
+                    : <ActionButton label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : 'Waiting for review'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} />}
             {canReject ? <ActionButton label="Reject" onPress={() => onReject(activeRun, change.id)} /> : null}
-            {change.rejectedAt ? <Text style={styles.badge}>REJECTED</Text> : null}
-            {change.supersededAt ? <Text style={styles.badge}>SUPERSEDED</Text> : null}
           </View>
         </View>;
       })}
@@ -213,16 +235,17 @@ function Metric({ children }: React.PropsWithChildren) {
   return <Text style={styles.metric}>{children}</Text>;
 }
 
-function ActionButton({ label, onPress, disabled = false, active = false }: { label: string; onPress: () => void; disabled?: boolean; active?: boolean }) {
-  return <Pressable
+function ActionButton({ label, accessibilityLabel, onPress, disabled = false, active = false, expanded }: { label: string; accessibilityLabel?: string; onPress: () => void; disabled?: boolean; active?: boolean; expanded?: boolean }) {
+  return <FocusPressable
     accessibilityRole="button"
-    accessibilityState={{ disabled, selected: active }}
+    accessibilityLabel={accessibilityLabel ?? label}
+    accessibilityState={{ disabled, selected: active, expanded }}
     disabled={disabled}
     onPress={onPress}
     style={({ pressed }) => [styles.button, active && styles.buttonActive, disabled && styles.buttonDisabled, pressed && !disabled && styles.buttonPressed]}
   >
     <Text style={[styles.buttonText, disabled && styles.dim]}>{label}</Text>
-  </Pressable>;
+  </FocusPressable>;
 }
 
 const styles = StyleSheet.create({
@@ -230,7 +253,7 @@ const styles = StyleSheet.create({
   content: { padding: 24, gap: 14 },
   kicker: { color: colors.accent, fontFamily: typography.body, fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
   title: { color: colors.ink, fontFamily: typography.display, fontSize: 29, fontWeight: '700' },
-  dim: { color: colors.muted, fontFamily: typography.body, fontSize: 13, lineHeight: 19 },
+  dim: { ...type.body, color: colors.muted },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
@@ -242,14 +265,22 @@ const styles = StyleSheet.create({
   metric: { color: colors.accent, fontFamily: typography.body, fontSize: 12, fontWeight: '700' },
   section: { marginTop: 12, color: colors.ink, fontFamily: typography.display, fontSize: 18, fontWeight: '700' },
   card: { padding: 14, gap: 8, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, borderRadius: 10 },
-  name: { color: colors.ink, fontFamily: typography.body, fontSize: 13, fontWeight: '700' },
-  body: { color: colors.secondary, fontFamily: typography.body, fontSize: 13, lineHeight: 19 },
+  // The same neutral channel the Dispatch screen uses, because this notice carries successes
+  // as well as failures: a successful apply dressed as an error reads as a failure.
+  statusNotice: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: '#24231F', borderWidth: 1, borderColor: '#554932', borderRadius: 8 },
+  statusNoticeText: { flex: 1, color: '#E9CEA2', fontFamily: typography.body, fontSize: 12, lineHeight: 18 },
+  name: { ...type.body, color: colors.ink, fontWeight: '700' },
+  body: { ...type.body, color: colors.secondary },
   badge: { color: colors.accent, fontFamily: typography.body, fontSize: 10, fontWeight: '700' },
-  activityText: { color: colors.secondary, fontFamily: typography.body, fontSize: 11, lineHeight: 17, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
+  activityText: { color: colors.secondary, fontFamily: typography.body, fontSize: 12, lineHeight: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
   input: { minWidth: 280, flex: 1, minHeight: 48, padding: 12, color: colors.ink, backgroundColor: colors.panel, borderColor: colors.border, borderWidth: 1, borderRadius: 8 },
   imageComparison: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
   preview: { width: 280, height: 240, resizeMode: 'contain', backgroundColor: colors.panel, borderRadius: 8 },
-  diffLabel: { color: colors.accent, fontFamily: typography.body, fontSize: 10, fontWeight: '700', marginTop: 5 },
-  code: { color: colors.ink, fontFamily: 'Cascadia Code', fontSize: 11, lineHeight: 16, maxWidth: 850, marginTop: 5 },
+  diffLabel: { ...type.caption, color: colors.accent, fontWeight: '700', letterSpacing: .6, marginTop: 5 },
+  diffRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  lineNumber: { ...type.code, width: 32, color: colors.muted, marginRight: 8, marginTop: 5 },
+  diffAdded: { color: colors.accent },
+  diffRemoved: { color: colors.danger },
+  code: { ...type.code, color: colors.ink, maxWidth: 850, marginTop: 5 },
   receiptMessage: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8, gap: 4 },
 });

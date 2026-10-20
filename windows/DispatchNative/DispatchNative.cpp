@@ -73,7 +73,6 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   // Get the AppWindow so we can configure its initial title and size
   auto appWindow{reactNativeWin32App.AppWindow()};
   appWindow.Title(L"Dispatch AI");
-  appWindow.Resize({1000, 1000});
 
   // Minimum window size. A desktop build has no 320px target -- that number comes from
   // WCAG's mobile reflow criterion and does not transfer. What matters here is that the
@@ -81,22 +80,22 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   // has room to grow into. Below this the layout stops being usable, so refuse to go there.
   // MIN_WINDOW_WIDTH/HEIGHT in src/layoutFloor.ts mirror these values; a test asserts they
   // have not drifted apart.
-  constexpr win32::WindowsInt32 kMinWindowWidth = 900;
-  constexpr win32::WindowsInt32 kMinWindowHeight = 600;
-  auto sizeInt32{win32::SizeInt32{kMinWindowWidth, kMinWindowHeight}};
-  auto minSize{win32::SizeInt32{kMinWindowWidth, kMinWindowHeight}};
-  SetWindowPos(appWindow.asWindowHandle().get(), nullptr, 0, 0, sizeInt32.Width, sizeInt32.Height,
-               SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
-  if (appWindow.Size() != minSize) {
-    // OverlappedPresenter refuses an OverlappedPresenter on some hosts; fall back to the
-    // window manager's own presenter so the floor is still enforced.
-    appWindow.SetPresenter(win32::AppWindow::GetDefaultPresenter());
-  }
-  appWindow.Changed([](win32::AppWindow const &, win32::AppWindowChangedEventArgs &args) {
-    if (args.DidPresenterChange()) {
-      auto presenter{win32::AppWindow::GetDefaultPresenter()};
-      if (presenter) presenter.PreferredMinimumWidth(kMinWindowWidth);
+  constexpr int32_t kMinWindowWidth = 900;
+  constexpr int32_t kMinWindowHeight = 600;
+  // The floor is a property of the presenter, so it is set there: an OverlappedPresenter
+  // refuses to shrink below its preferred minimum, which is what actually stops the window
+  // being dragged narrower. Resize alone would only set the starting size.
+  auto applyFloor = [](winrt::Microsoft::UI::Windowing::AppWindow const &window) {
+    if (auto presenter = window.Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>()) {
+      presenter.PreferredMinimumWidth(kMinWindowWidth);
+      presenter.PreferredMinimumHeight(kMinWindowHeight);
     }
+  };
+  appWindow.SetPresenter(winrt::Microsoft::UI::Windowing::AppWindowPresenterKind::Overlapped);
+  applyFloor(appWindow);
+  appWindow.Resize({1000, 1000});
+  appWindow.Changed([applyFloor](winrt::Microsoft::UI::Windowing::AppWindow const &window, winrt::Microsoft::UI::Windowing::AppWindowChangedEventArgs const &args) {
+    if (args.DidPresenterChange()) { applyFloor(window); }
   });
 
   // Get the ReactViewOptions so we can set the initial RN component to load

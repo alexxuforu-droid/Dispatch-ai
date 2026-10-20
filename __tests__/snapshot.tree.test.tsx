@@ -223,6 +223,94 @@ test('no fixed width exceeds the window floor we actually ship', async () => {
   await act(async () => { tree.unmount(); });
 }, 60000);
 
+// The accessible name of a rendered control: its own label if it declares one, otherwise the
+// text it renders. Matching only on accessibilityLabel would miss a correctly labelled control
+// whose name comes from a child Text, which is what a screen reader announces too.
+function accessibleName(node: any): string {
+  const own = node?.props?.accessibilityLabel ?? node?.props?.accessibilityHint ?? '';
+  if (String(own).trim()) return String(own);
+  const text = (node?.children ?? []).filter((child: unknown) => typeof child === 'string').map((child: string) => child.trim()).filter(Boolean).join(' ');
+  return text;
+}
+
+// Pressable controls expose their handler to the host node as onClick, falling back to onPress
+// and the responder events; JSON.stringify drops functions, so this walks the live tree.
+function pressHandler(node: any): (() => void) | undefined {
+  const handler = node?.props?.onClick ?? node?.props?.onPress ?? node?.props?.onResponderRelease;
+  return typeof handler === 'function' ? (handler as () => void) : undefined;
+}
+
+function walkTree(node: any, visit: (node: any) => void): void {
+  if (!node || typeof node === 'string') return;
+  if (Array.isArray(node)) { node.forEach((child: any) => walkTree(child, visit)); return; }
+  visit(node);
+  (Array.isArray(node.children) ? node.children : []).forEach((child: unknown) => walkTree(child, visit));
+}
+
+// Collects the accessible button controls whose name indicates they open run setup. Working from
+// the live tree rather than the dumped JSON keeps the press handler available.
+function controlsOpeningRunSetup(tree: ReactTestRenderer): any[] {
+  const found: any[] = [];
+  walkTree(tree.toJSON(), node => {
+    const role = node.props?.accessibilityRole;
+    if (role !== 'button' && role !== undefined) return;
+    const handler = pressHandler(node);
+    if (handler && /run setup/i.test(accessibleName(node))) found.push(node);
+  });
+  return found;
+}
+
+// The desktop counterpart of the 320px concern, stated against the floor we actually enforce.
+// Every width at or above MIN_WINDOW_WIDTH shows the inspector inline; only 320, which sits below
+// the floor and cannot be reached in the shipping window, is a diagnostic where a labelled action
+// opens the same inspector instead. The 900 row is the one that fails today: `compact` is
+// `width < 1040`, so at 900 the inspector is absent from the tree entirely and "Run setup" is
+// nowhere on the Dispatch screen, while the same claim holds at 1040 and 1440.
+test('the run inspector is reachable at every supported window width', async () => {
+  const App = require('../App');
+  for (const width of [MIN_WINDOW_WIDTH, 1040, 1440]) {
+    setViewport(width, 900);
+    const json = await snapshot(`screen-dispatch-inspector-${width}`, React.createElement(App.default, { initialScreen: 'dispatch' }));
+    // Rendered copy, not a boolean. The inspector's own sections must be in the tree.
+    expect(json).toContain('Run setup');
+    expect(json).toContain('Agent team');
+    expect(json).toContain('Review policy');
+    expect(json).toContain('Nothing is applied until you approve it');
+    // Reachable means both survive together: the composer is still in the same tree, so a
+    // narrowed pane has not displaced it.
+    expect(json).toContain('Describe a task for your agent team');
+  }
+
+  // Below the floor there is no inline inspector to fall out of the tree, so the same sections
+  // must be reachable another way: a clearly labelled action that opens run setup. A separate
+  // render at 320 rather than a loop entry, because the route differs -- it is a press, not the
+  // layout. The dispatch tree is compact today, so this fails now with zero matches.
+  setViewport(320, 900);
+  let tree!: ReactTestRenderer;
+  await act(async () => { tree = renderer.create(React.createElement(App.default, { initialScreen: 'dispatch' })); });
+
+  // Rendered sections, not a boolean, so a failure names the missing copy.
+  const controls = controlsOpeningRunSetup(tree);
+  if (controls.length !== 1) {
+    throw new Error(`expected exactly one button opening run setup at 320px, found ${controls.length}`);
+  }
+  const before = JSON.stringify(tree.toJSON());
+  expect(before).not.toContain('Review policy');
+
+  await act(async () => { pressHandler(controls[0])?.(); });
+
+  // The same sections and the same composer, still in the rendered state after the press.
+  const pressed = JSON.stringify(tree.toJSON());
+  expect(pressed).toContain('Run setup');
+  expect(pressed).toContain('Agent team');
+  expect(pressed).toContain('Review policy');
+  expect(pressed).toContain('Nothing is applied until you approve it');
+  expect(pressed).toContain('Describe a task for your agent team');
+  fs.writeFileSync(path.join(OUT_DIR, 'screen-dispatch-inspector-320-open.json'), JSON.stringify(tree.toJSON(), null, 1), 'utf8');
+
+  await act(async () => { tree.unmount(); });
+}, 120000);
+
 test('narrow viewports actually change the tree', async () => {
   // Self-contained on purpose. An earlier version read captures written by the tests above
   // it, so a filtered or isolated run silently compared stale artifacts from a prior run.
@@ -238,8 +326,22 @@ test('narrow viewports actually change the tree', async () => {
   const narrow = await capture(320);
   const medium = await capture(900);
   const desktop = await capture(1440);
-  // 320 and 900 sit on the same side of the 1040 compact threshold, so they must match;
-  // the meaningful proof is that a narrow viewport differs from the desktop layout.
-  expect(narrow).toEqual(medium);
+
+  // The compact trait itself, asserted on copy only `!compact` renders: workspace chrome that
+  // disappears when the pane narrows. Both 320 and 900 must have dropped it, which is what keeps
+  // this a compact-vs-desktop claim rather than an inspector-only one.
+  expect(narrow).not.toContain('AI WORKSPACE');
+  expect(medium).not.toContain('AI WORKSPACE');
+  expect(desktop).toContain('AI WORKSPACE');
+  // ...and the desktop layout differs from both, so narrowing the window is doing real work.
   expect(narrow).not.toEqual(desktop);
+  expect(medium).not.toEqual(desktop);
+
+  // The intentional responsive difference that replaced a byte-identity assertion. 320 is below
+  // MIN_WINDOW_WIDTH, so it carries no inline inspector; 900 is at the floor and shows one. Two
+  // widths on the same side of the 1040 threshold, now guaranteed different for a reason rather
+  // than only incidentally. Fails today: neither renders the inspector.
+  expect(medium).toContain('Review policy');
+  expect(narrow).not.toContain('Review policy');
+  expect(narrow).not.toEqual(medium);
 }, 60000);

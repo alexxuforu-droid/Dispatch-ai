@@ -8,7 +8,7 @@
 // real here (its eviction behaviour is under test); only the storage behind it is memory.
 jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
 
-import { Coordinator, AgentExecutor, AgentResult, AutoReviewer, RunApproval } from '../src/orchestration/coordinator';
+import { Coordinator, RunStoreError, AgentExecutor, AgentResult, AutoReviewer, RunApproval } from '../src/orchestration/coordinator';
 import { MemoryEventStore } from '../src/orchestration/event-store';
 import { FormatAwareReviewer, scanSecrets, selectCodeReviewer, selectImageReviewer, selectPeerReviewer } from '../src/orchestration/review';
 import { replayRun } from '../src/orchestration/replay';
@@ -64,6 +64,20 @@ async function makeRun(items: { title: string; kind: WorkItem['kind']; agentId: 
   const coordinator = new Coordinator(store, ex.run, ok.run, gate.run);
   const run = await coordinator.create('Ship it', team(agents), items);
   return { coordinator, store, ex, gate, run };
+}
+
+/**
+ * A store that rejects its appends the way a device out of space, a locked database, or a
+ * full disk does: the event that could not be saved is the one that throws, and everything
+ * else behaves exactly like the memory store so the run's own work still succeeds.
+ */
+class RejectingEventStore extends MemoryEventStore {
+  readonly rejected: Omit<RunEvent, 'seq'>[] = [];
+  constructor(private readonly rejects: (event: Omit<RunEvent, 'seq'>) => boolean) { super(); }
+  async append(event: Omit<RunEvent, 'seq'>): Promise<RunEvent> {
+    if (this.rejects(event)) { this.rejected.push(event); throw new Error('The run history could not be saved.'); }
+    return super.append(event);
+  }
 }
 
 describe('Coordinator.create', () => {
@@ -273,6 +287,81 @@ describe('Coordinator.execute', () => {
     const resumed = await coordinator.execute(paused, team(agents));
     expect(resumed.status).toBe('completed');
     expect(resumed.checkpointPaused).toBeFalsy();
+  });
+
+  // The refusal has to be a refusal, not a repair. A caller that hands execute a run which
+  // already finished -- a completed run someone pressed resume on, a run already in flight
+  // on another screen -- must get the error back with the run untouched. Stamping that run
+  // failed instead would erase finished work from the receipt, from the run room, and from
+  // every replay of its log, to describe a run that never failed.
+  test('execute refuses a finished run and leaves it exactly as it was', async () => {
+    const { coordinator, run, store, ex } = await makeRun([{ title: 'A', kind: 'code', agentId: 'builder' }], [agent()]);
+    const finished = await coordinator.execute(run, team([agent()]));
+    expect(finished.status).toBe('completed');
+    const before = JSON.parse(JSON.stringify(finished)) as Run;
+    const eventsBefore = await store.read(finished.id);
+    const callsBefore = ex.calls.length;
+
+    await expect(coordinator.execute(finished, team([agent()]))).rejects.toThrow(/not waiting to start or resume/);
+
+    // The object the caller still holds is the one that must not move.
+    expect(JSON.parse(JSON.stringify(finished))).toEqual(before);
+    // And nothing reached the log for the refused call, so replay cannot resurrect a lie the
+    // in-memory state avoided.
+    expect(await store.read(finished.id)).toHaveLength(eventsBefore.length);
+    // No agent was woken up to redo work a completed run already finished.
+    expect(ex.calls).toHaveLength(callsBefore);
+  });
+
+  test('execute refuses a run already in flight, without stamping it failed', async () => {
+    const { coordinator, run } = await makeRun([{ title: 'A', kind: 'code', agentId: 'builder' }], [agent()]);
+    const inFlight: Run = { ...run, status: 'running', items: run.items.map(item => ({ ...item, status: 'running' })) };
+    await expect(coordinator.execute(inFlight, team([agent()]))).rejects.toThrow(/not waiting to start or resume/);
+    // A refusal is not a failure: the status gate sits outside the catch that stamps failed.
+    expect(inFlight.status).toBe('running');
+    expect(inFlight.items.map(item => item.status)).toEqual(['running']);
+    expect(inFlight.messages.some(message => /Run stopped/.test(message.text))).toBe(false);
+  });
+
+  // A device that cannot save is not a run that failed. The bookkeeping failure has to reach
+  // the caller as itself, and the run it describes has to keep the status its work earned --
+  // swallowing the storage error into a 'failed' stamp would tell the team their completed
+  // run broke, and the run room would offer to redo work that is already done.
+  test('a storage failure while recording a finished run surfaces instead of falsifying it failed', async () => {
+    const store = new RejectingEventStore(event => event.type === 'run.status' && (event.payload as { status?: string }).status === 'completed');
+    const ex = executor(() => ({ summary: 'done' }));
+    const coordinator = new Coordinator(store, ex.run, ok.run, approval().run);
+    const run = await coordinator.create('b', team([agent()]), [{ title: 'A', kind: 'code', agentId: 'builder' }]);
+
+    await expect(coordinator.execute(run, team([agent()]))).rejects.toThrow(RunStoreError);
+
+    // The work stood: the run completed its item, and that is what the run still says.
+    expect(run.status).toBe('completed');
+    expect(run.items.map(item => item.status)).toEqual(['done']);
+    // No failure language was written over it, in the message list or in the log.
+    expect(run.messages.some(message => message.kind === 'finding')).toBe(false);
+    expect(run.messages.some(message => /Run stopped/.test(message.text))).toBe(false);
+    const events = await store.read(run.id);
+    expect(events.some(event => event.type === 'run.status' && (event.payload as { status?: string }).status === 'failed')).toBe(false);
+    // The append that could not be saved is the one that failed, and only that one.
+    expect(store.rejected).toHaveLength(1);
+    expect(store.rejected[0].type).toBe('run.status');
+  });
+
+  test('a storage failure mid-run surfaces without stamping the run or its items failed', async () => {
+    const store = new RejectingEventStore(event => event.type === 'work.started');
+    const ex = executor(() => ({ summary: 'done' }));
+    const coordinator = new Coordinator(store, ex.run, ok.run, approval().run);
+    const run = await coordinator.create('b', team([agent()]), [{ title: 'A', kind: 'code', agentId: 'builder' }]);
+
+    await expect(coordinator.execute(run, team([agent()]))).rejects.toThrow(RunStoreError);
+
+    // The run never got to a verdict, so it is left where it was rather than failed.
+    expect(run.status).toBe('running');
+    expect(run.items.map(item => item.status)).toEqual(['running']);
+    expect(run.messages.some(message => /Run stopped/.test(message.text))).toBe(false);
+    const events = await store.read(run.id);
+    expect(events.some(event => event.type === 'work.finished' && (event.payload as { item?: { status?: string } }).item?.status === 'failed')).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 /** One rendered diff line: changed lines carry add/remove, meta marks truncated spans. */
 export type DiffLineKind = 'context' | 'add' | 'remove' | 'meta';
-export type DiffLine = { kind: DiffLineKind; text: string };
+export type DiffLine = { kind: DiffLineKind; text: string; oldLineNumber?: number; newLineNumber?: number };
 /** Flat hunk list: context lines clamp each change group; gaps longer than 2*context become meta markers. */
 export type DiffResult = { identical: boolean; added: number; removed: number; truncated: boolean; lines: DiffLine[] };
 
@@ -22,11 +22,15 @@ export function diffLines(before: string, after: string): DiffResult {
   while (tail < oldLines.length - head && tail < newLines.length - head
     && oldLines[oldLines.length - 1 - tail] === newLines[newLines.length - 1 - tail]) tail += 1;
 
-  const middle = diffMiddle(oldLines.slice(head, oldLines.length - tail), newLines.slice(head, newLines.length - tail));
+  // Each file is numbered on its own axis: a remove advances the old file only, an add the new
+  // file only, a context line carries both. Deriving the numbers from one interleaved op index
+  // shifts every changed line after the first op, which is the common single-line-edit shape
+  // and reads as a wrong line to review.
+  const middle = diffMiddle(oldLines.slice(head, oldLines.length - tail), newLines.slice(head, newLines.length - tail), head);
   const ops: DiffLine[] = [
-    ...oldLines.slice(0, head).slice(-CONTEXT_LINES).map(text => context(text)),
+    ...oldLines.slice(0, head).slice(-CONTEXT_LINES).map((text, index, visible) => context(text, head - visible.length + index + 1, head - visible.length + index + 1)),
     ...middle,
-    ...oldLines.slice(oldLines.length - tail).slice(0, CONTEXT_LINES).map(text => context(text)),
+    ...oldLines.slice(oldLines.length - tail).slice(0, CONTEXT_LINES).map((text, index) => context(text, oldLines.length - tail + index + 1, newLines.length - tail + index + 1)),
   ];
 
   let added = 0;
@@ -50,17 +54,22 @@ function trimTrailingNewline(text: string): string {
   return text.endsWith('\n') ? text.slice(0, -1) : text;
 }
 
-function context(text: string): DiffLine {
-  return { kind: 'context', text };
+function context(text: string, oldLineNumber?: number, newLineNumber?: number): DiffLine {
+  return {
+    kind: 'context',
+    text,
+    ...(oldLineNumber === undefined ? {} : { oldLineNumber }),
+    ...(newLineNumber === undefined ? {} : { newLineNumber }),
+  };
 }
 
-function diffMiddle(oldLines: string[], newLines: string[]): DiffLine[] {
+function diffMiddle(oldLines: string[], newLines: string[], offset: number): DiffLine[] {
   const rows = oldLines.length;
   const columns = newLines.length;
   if ((rows + 1) * (columns + 1) > MAX_DP_CELLS) {
     return [
-      ...oldLines.map<DiffLine>(text => ({ kind: 'remove', text })),
-      ...newLines.map<DiffLine>(text => ({ kind: 'add', text })),
+      ...oldLines.map<DiffLine>((text, index) => ({ kind: 'remove', text, oldLineNumber: offset + index + 1 })),
+      ...newLines.map<DiffLine>((text, index) => ({ kind: 'add', text, newLineNumber: offset + index + 1 })),
     ];
   }
 
@@ -79,19 +88,21 @@ function diffMiddle(oldLines: string[], newLines: string[]): DiffLine[] {
   let column = 0;
   while (row < rows && column < columns) {
     if (oldLines[row] === newLines[column]) {
-      ops.push(context(oldLines[row]));
+      // Each file carries its own position for this line: after an unequal add/remove run the
+      // old and new numbers diverge, and a single shared counter would mislabel the rest.
+      ops.push(context(oldLines[row], offset + row + 1, offset + column + 1));
       row += 1;
       column += 1;
     } else if (lcs[(row + 1) * width + column] >= lcs[row * width + column + 1]) {
-      ops.push({ kind: 'remove', text: oldLines[row] });
+      ops.push({ kind: 'remove', text: oldLines[row], oldLineNumber: offset + row + 1 });
       row += 1;
     } else {
-      ops.push({ kind: 'add', text: newLines[column] });
+      ops.push({ kind: 'add', text: newLines[column], newLineNumber: offset + column + 1 });
       column += 1;
     }
   }
-  while (row < rows) ops.push({ kind: 'remove', text: oldLines[row++] });
-  while (column < columns) ops.push({ kind: 'add', text: newLines[column++] });
+  while (row < rows) { ops.push({ kind: 'remove', text: oldLines[row], oldLineNumber: offset + row + 1 }); row += 1; }
+  while (column < columns) { ops.push({ kind: 'add', text: newLines[column], newLineNumber: offset + column + 1 }); column += 1; }
   return ops;
 }
 

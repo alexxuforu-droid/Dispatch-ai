@@ -35,14 +35,36 @@ describe('diffLines', () => {
       removed: 1,
       truncated: false,
       lines: [
-        { kind: 'context', text: 'header' },
-        { kind: 'context', text: 'one' },
-        { kind: 'remove', text: 'two' },
-        { kind: 'add', text: 'TWO' },
-        { kind: 'context', text: 'three' },
-        { kind: 'context', text: 'footer' },
+        { kind: 'context', text: 'header', oldLineNumber: 1, newLineNumber: 1 },
+        { kind: 'context', text: 'one', oldLineNumber: 2, newLineNumber: 2 },
+        { kind: 'remove', text: 'two', oldLineNumber: 3 },
+        { kind: 'add', text: 'TWO', newLineNumber: 3 },
+        { kind: 'context', text: 'three', oldLineNumber: 4, newLineNumber: 4 },
+        { kind: 'context', text: 'footer', oldLineNumber: 5, newLineNumber: 5 },
       ],
     });
+  });
+
+  it('numbers each file on its own axis so a change points at the right line', () => {
+    // Two old lines become three new ones: the adds sit at new lines 3 and 4, and the removed
+    // line is old line 3. One shared op index would push the adds to 4 and 5.
+    const result = diffLines('a\nb\nc\nd', 'a\nX\nY\nZ\nd');
+    const adds = result.lines.filter(line => line.kind === 'add');
+    const removes = result.lines.filter(line => line.kind === 'remove');
+    expect(adds.map(line => line.newLineNumber)).toEqual([2, 3, 4]);
+    expect(removes.map(line => line.oldLineNumber)).toEqual([2, 3]);
+    // The context line after the change keeps both files' numbering.
+    const trailing = result.lines.filter(line => line.kind === 'context').at(-1);
+    expect(trailing?.oldLineNumber).toBe(4);
+    expect(trailing?.newLineNumber).toBe(5);
+  });
+
+  it('keeps numbering correct when the change is a single replaced line', () => {
+    const result = diffLines('header\none\ntwo\nthree\nfooter', 'header\none\nTWO\nthree\nfooter');
+    const add = result.lines.find(line => line.kind === 'add');
+    const remove = result.lines.find(line => line.kind === 'remove');
+    expect(add?.newLineNumber).toBe(3);
+    expect(remove?.oldLineNumber).toBe(3);
   });
 
   it('renders a multi-line block replacement with exact add/remove counts', () => {
@@ -85,7 +107,7 @@ describe('diffLines', () => {
     const result = diffLines('', Array.from({ length: 5000 }, (_, index) => `line ${index}`).join('\n'));
     expect(result).toMatchObject({ added: 5000, removed: 0, identical: false, truncated: true });
     expect(result.lines.length).toBe(MAX_VIEW_LINES);
-    expect(result.lines[0]).toEqual({ kind: 'add', text: 'line 0' });
+    expect(result.lines[0]).toEqual({ kind: 'add', text: 'line 0', newLineNumber: 1 });
     expect(result.lines.at(-1)?.kind).toBe('meta');
     expect(result.lines.slice(0, -1).every(line => line.kind === 'add')).toBe(true);
   });
@@ -96,7 +118,7 @@ describe('diffLines', () => {
     const result = diffLines(oldLines.join('\n'), newLines.join('\n'));
     expect(result).toMatchObject({ added: 2000, removed: 2000, truncated: true });
     expect(result.lines.length).toBe(MAX_VIEW_LINES);
-    expect(result.lines[0]).toEqual({ kind: 'remove', text: 'old 0' });
+    expect(result.lines[0]).toEqual({ kind: 'remove', text: 'old 0', oldLineNumber: 1 });
     const rendered = result.lines.slice(0, -1);
     expect(rendered.every(line => line.kind === 'remove')).toBe(true);
     expect(result.lines.at(-1)?.kind).toBe('meta');
