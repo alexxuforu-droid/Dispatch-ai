@@ -68,6 +68,16 @@
   <ImportGroup Label="ReactNativeWindowsPropertySheets">
     <Import Project="$(ReactNativeWindowsDir)\PropertySheets\External\Microsoft.ReactNative.Composition.CppApp.props" />
   </ImportGroup>
+  <PropertyGroup Label="WindowsAppRuntime">
+    <!-- RNW's WinUI.props forces WindowsAppSdkAutoInitialize=false for WinAppSDK >= 1.7, so this
+         unpackaged exe never bootstraps the Windows App Runtime: the first WinUI/WinAppSDK class
+         activation throws winrt::hresult_class_not_registered, nothing catches it, and the CRT
+         aborts (0xC0000409 in ucrtbase.dll) before a window exists. Re-enable the SDK's
+         auto-initializer, which calls MddBootstrapInitialize2 with the 1.8.260508005 minimum
+         before main, pinning this app to the 1.8 runtime it is built against. -->
+    <WindowsAppSdkAutoInitialize>true</WindowsAppSdkAutoInitialize>
+    <WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
+  </PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile>
       <PrecompiledHeader>Use</PrecompiledHeader>
