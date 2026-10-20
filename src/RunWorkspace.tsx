@@ -200,11 +200,11 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
           {secretBlock ? <Text style={styles.dim}>{secretBlock}</Text> : null}
           <View style={styles.actions}>
             {change.appliedAt && !change.revertedAt
-              ? <ActionButton label="Undo applied change" onPress={() => onUndo(activeRun, change.id)} />
+              ? <ActionButton label="Undo applied change" disabled={!projectRoot} onPress={() => onUndo(activeRun, change.id)} />
               : change.revertedAt ? <Text style={styles.badge}>REVERTED</Text>
                 : change.rejectedAt ? <Text style={styles.badge}>REJECTED</Text>
                   : change.supersededAt ? <Text style={styles.badge}>SUPERSEDED</Text>
-                    : <ActionButton label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : 'Waiting for review'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} />}
+                    : <ActionButton label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : itemStatus === 'blocked' ? 'Waiting for its dependencies' : itemStatus === 'failed' ? 'This step failed' : 'Waiting for review'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} />}
             {canReject ? <ActionButton label="Reject" onPress={() => onReject(activeRun, change.id)} /> : null}
           </View>
         </View>;

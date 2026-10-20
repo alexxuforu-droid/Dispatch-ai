@@ -68,7 +68,7 @@ export function useFocusRing() {
  * The colour is picked from the control's own fill, so a filled accent button (a mint
  * background) gets a lighter mint and a dark surface gets the raised tone.
  */
-export function FocusPressable({ children, style, onFocus, onBlur, ...rest }: React.ComponentProps<typeof Pressable>) {
+export function FocusPressable({ children, style, onFocus, onBlur, focusIndicator = true, ...rest }: React.ComponentProps<typeof Pressable> & { focusIndicator?: boolean }) {
   const { focusProps, focused } = useFocusRing();
   return <Pressable
     {...rest}
@@ -76,13 +76,16 @@ export function FocusPressable({ children, style, onFocus, onBlur, ...rest }: Re
     onBlur={(event) => { focusProps.onBlur(); onBlur?.(event); }}
     style={(state) => {
       const resolved = typeof style === 'function' ? style(state) : style;
-      if (!focused) return resolved;
+      if (!focused || !focusIndicator) return resolved;
       const flat = (Array.isArray(resolved) ? resolved : [resolved]).filter(Boolean) as (Record<string, unknown> | undefined)[];
       const entries = flat.filter((entry): entry is Record<string, unknown> => Boolean(entry));
       const background = entries.map(entry => entry.backgroundColor).find(value => typeof value === 'string') as string | undefined;
       const onAccent = background?.toLowerCase() === colors.accent.toLowerCase();
       const hasBorder = entries.some(entry => typeof entry.borderWidth === 'number' && entry.borderWidth > 0);
       if (hasBorder) return [resolved, { borderColor: onAccent ? colors.accentInk : colors.accent }];
+      // An absolutely positioned layer is a surface, not a control: painting it would cover
+      // what is underneath, which is the opposite of helping the person see where they are.
+      if (entries.some(entry => entry.position === 'absolute')) return resolved;
       return [resolved, { backgroundColor: onAccent ? colors.accentFocus : colors.raisedHover }];
     }}
   >{children}</Pressable>;

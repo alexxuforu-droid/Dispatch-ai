@@ -401,6 +401,8 @@ function CodeProposalCard({ change, itemStatus, projectRoot, applying, onApply }
     : itemStatus === 'needs-approval' ? 'Review findings and apply anyway'
     : itemStatus === 'done' ? 'Apply proposal'
     : itemStatus === 'cancelled' ? 'Run was cancelled'
+    : itemStatus === 'blocked' ? 'Waiting for its dependencies'
+    : itemStatus === 'failed' ? 'This step failed'
     : 'Waiting for review';
   return <View style={styles.codeProposal}>
     <View style={styles.codeProposalHead}><View style={{ flex: 1 }}><Text style={styles.codeProposalPath}>{change.path}</Text><Text style={styles.codeProposalMeta}>{change.createdBy} · revision {change.attempt} · {change.supersededAt ? 'replaced by a newer proposal' : itemStatus === 'done' ? 'work complete · inspect before applying' : itemStatus === 'needs-approval' ? 'automatic review flagged this proposal' : itemStatus ?? 'waiting'}</Text></View><Text style={styles.imageArtifactTag}>{change.supersededAt ? 'SUPERSEDED' : change.revertedAt ? 'REVERTED' : change.rejectedAt ? 'REJECTED' : change.appliedAt ? 'APPLIED' : 'PROPOSAL'}</Text></View>

@@ -1077,11 +1077,10 @@ async function mountResultsStudio(props: Partial<ResultsStudioProps>): Promise<{
 }
 
 // The apply control carries its own words, and which words it carries is the whole contract:
-// today the label is "Apply selected change" whatever the state, and under the fix it re-labels
-// itself with the refusal reason. The matcher accepts any of the three so an honest spelling
-// passes, while a control that says nothing about the refusal does not.
+// the label re-labels itself with the refusal reason, so the matcher accepts every honest
+// wording the control can take, while a control that says nothing about the refusal does not.
 function applyControlIn(node: TreeRoot): TreeNode | null {
-  return pressableNodes(node).find(candidate => /apply|choose a project folder|waiting for review/i.test(subtreeText(candidate))) ?? null;
+  return pressableNodes(node).find(candidate => /apply|choose a project folder|waiting for|this step failed|blocked for secrets/i.test(subtreeText(candidate))) ?? null;
 }
 
 // A control that exists but is disabled is not an affordance. React Native keeps the state
@@ -1116,15 +1115,19 @@ test('with no project folder selected the results studio disables apply and says
 
 // Blocked and failed are both refusals -- App.tsx:202 admits only done and needs-approval -- and
 // both are ordinary outcomes a completed run can carry, so the control must be equally honest
-// about each.
-test.each(['blocked', 'failed'] as const)('a work item left %s disables apply and says it is waiting for review', async itemStatus => {
+// about each. Neither is "waiting for review": a blocked step is waiting on its dependencies
+// and a failed step has already failed, so the label says which.
+test.each([
+  ['blocked', /waiting for its dependencies/i],
+  ['failed', /this step failed/i],
+] as const)('a work item left %s disables apply and says so plainly', async (itemStatus, expected) => {
   const run = resultsRun(itemStatus, resultsChange());
   const { tree } = await mountResultsStudio({ run, projectRoot: 'Z:\\fixture-project' });
 
   const applyControl = applyControlIn(tree.toJSON());
   if (!applyControl) throw new Error('no apply control is rendered for the change');
   expect(actionDisabled(applyControl)).toBe(true);
-  expect(subtreeText(applyControl)).toMatch(/waiting for review/i);
+  expect(subtreeText(applyControl)).toMatch(expected);
   await unmount(tree);
 });
 

@@ -45,3 +45,33 @@ test('no user-facing text is set below the 10px type floor', () => {
   }
   expect(offenders).toEqual([]);
 });
+
+test('no line is packed tighter than the text it carries', () => {
+  // A line height at or below the font size makes wrapped lines touch or clip, which undoes
+  // the legibility the floor was for. The floor test only knows about font sizes, so the
+  // pairing is held here.
+  //
+  // The styles live as one declaration per line, so a font size is paired with the first
+  // line height that follows it on the same line. This walks the text directly rather than
+  // with a lazy pattern, which backtracks badly on these very long style lines.
+  const offenders: string[] = [];
+  for (const root of ROOTS) {
+    for (const file of sourceFiles(root)) {
+      const lines: string[] = fs.readFileSync(file, 'utf8').split('\n');
+      lines.forEach((line: string, lineNumber: number) => {
+        if (!line.includes('lineHeight')) return;
+        // One linear pass per line over both declarations, so the order they appear in is
+        // the pairing: a font size takes the next line height that follows it.
+        let font = Number.NaN;
+        for (const match of line.matchAll(/fontSize: (\d+(?:\.\d+)?)|lineHeight: (\d+(?:\.\d+)?)/g)) {
+          if (match[1] !== undefined) { font = Number(match[1]); continue; }
+          const height = Number(match[2]);
+          if (Number.isFinite(font) && height < font) {
+            offenders.push(`${path.basename(file)}:${lineNumber + 1}: fontSize ${font} with lineHeight ${height}`);
+          }
+        }
+      });
+    }
+  }
+  expect(offenders).toEqual([]);
+});
