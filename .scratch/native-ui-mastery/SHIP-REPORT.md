@@ -77,6 +77,7 @@ items) because the tested run-setup contract and the 900px floor both push back.
 | 2 | code | nvidia-r3 / stepfun-ai/step-5-preview | 7.5 | 1 load-bearing, 6 cleanups |
 | 2 | test | nvidia-r6 / stepfun-ai/step-5-preview | 8.0 | 5 |
 | 3 | visual | nvidia-r2 / stepfun-ai/step-5-preview | 6.5 | 5 |
+| 4 | code | nvidia-r3 / stepfun-ai/step-5-preview | 8.5 | 0 load-bearing, 4 cleanups |
 | 2 | code | nvidia-r3 / stepfun-ai/step-5-preview | see below | see below |
 | 2 | visual | see below | see below | see below |
 
@@ -125,6 +126,15 @@ One of the visual judge's findings was wrong and is recorded as such: it read th
 button in the sidebar as a mint fill. The style is `backgroundColor: colors.text`, the
 white primary, and it has been for the whole build; the capture shows a white button. The
 judge's other colour readings were checked against the token file before acting on them.
+
+**What round 4 changed.** The code judge, reading the three fix commits and running the
+four gates itself, scored 8.5 and found no load-bearing issue. Its cleanups are fixed: the
+dead heading key went, the team picker's rows carry a transparent border so a focused and
+selected row no longer paints its ring in its own selection fill, and the icon button's
+tooltip sits against its own button. One of its findings was wrong and is recorded as such:
+it called sixteen style keys in the design studio dead, but that stylesheet is under the
+name `s` and the judge's search looked for `styles.`, so ten live references were missed
+and the keys stay.
 
 ---
 
