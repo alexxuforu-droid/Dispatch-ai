@@ -158,9 +158,20 @@ for (const finding of findings) {
   if (entry.lines.length < 6) entry.lines.push(finding.line);
 }
 
+// The warnings that are left are deliberate, and each one says why here, so a reader does
+// not have to go and find out.
+const ACCEPTED = new Map([
+  ['status-dot|App.tsx', 'the dot beside "the team is coordinating" shows the run is live'],
+  ['status-dot|src\\DesignStudio.tsx', 'the grip on a draggable canvas card is a handle, not a status beside a word'],
+  ['eyebrow|App.tsx', 'the run card status is a tag on a row, not a label above a heading'],
+  ['lead-block|src\\RunWorkspace.tsx', 'the decision row: the one lead block on that screen, on the change waiting for a person'],
+  ['lead-text|src\\ui.tsx', 'the inverse button label on the lead block, which is the pairing that stays legible'],
+]);
+
 for (const entry of grouped.values()) {
   const where = entry.lines.join(', ') + (entry.count > entry.lines.length ? `, +${entry.count - entry.lines.length} more` : '');
-  console.log(`${entry.level}  ${entry.id.padEnd(14)} ${entry.file}  (${where})  ${entry.message}`);
+  const reason = ACCEPTED.get(`${entry.id}|${entry.file.replace(/\//g, '\\')}`);
+  console.log(`${entry.level}  ${entry.id.padEnd(14)} ${entry.file}  (${where})  ${entry.message}${reason ? `  -- ${reason}` : ''}`);
 }
 const failures = findings.filter(finding => finding.level === 'FAIL').length;
 const warnings = findings.filter(finding => finding.level === 'WARN').length;
