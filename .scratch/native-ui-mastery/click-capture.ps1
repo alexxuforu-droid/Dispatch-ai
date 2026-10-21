@@ -41,7 +41,9 @@ Start-Sleep -Milliseconds 600
 
 if ($Size -match '^(\d+)x(\d+)$') {
   [void][Driver]::SetWindowPos($hwnd, [IntPtr]::Zero, 40, 20, [int]$Matches[1], [int]$Matches[2], 0x0040)
-  Start-Sleep -Milliseconds 900
+  # The JavaScript side has to hear about the new size before the capture, or the picture
+  # shows the layout from the old size.
+  Start-Sleep -Milliseconds 4000
 }
 
 $rect = New-Object Driver+RECT
@@ -55,6 +57,11 @@ if ($Wheel -ne 0) {
 }
 
 if ($Click -match '^(\d+),(\d+)$') {
+  # The coordinates are read off the capture, which is a copy of the window. A click at the
+  # same window position therefore lands on the same pixel, so the position is used as it
+  # is: the caption bar is part of the window, and the app's own surface sits below it on
+  # both sides. Subtracting anything here lands the click on the row above the one asked
+  # for, which is how every capture ended up showing the previous screen.
   $x = $rect.Left + [int]$Matches[1]
   $y = $rect.Top + [int]$Matches[2]
   [void][Driver]::SetCursorPos($x, $y)

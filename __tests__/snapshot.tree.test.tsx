@@ -82,7 +82,9 @@ test('capture the usage screen empty', async () => {
   // aggregates at zero, and must still carry the method statement.
   expect(json).toContain('Exact total');
   expect(json).toContain('Estimated total');
-  expect(json).toContain('Every token your agents spend');
+  // The page name lives in the top bar now, and the sentence under it says what the page
+  // is for.
+  expect(json).toContain('Usage');
   expect(json).toContain('never added together');
 }, 60000);
 

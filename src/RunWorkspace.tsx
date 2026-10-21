@@ -70,7 +70,7 @@ export function RunRoom({ run, busy, onPause, onResume, onResults, onUpdate }: {
     <View style={styles.actions}>
       {busy ? <Button label="Pause run" onPress={onPause} /> : null}
       {!busy && ['queued', 'cancelled', 'failed', 'needs-approval'].includes(run.status)
-        ? <Button label="Resume run" onPress={() => onResume(run)} /> : null}
+        ? <Button label="Resume run" onPress={() => onResume(run)} variant="primary" /> : null}
       <Button label="Open results and receipt" onPress={onResults} variant="ghost" />
     </View>
 
@@ -274,7 +274,7 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
                   : change.revertedAt ? <Chip label="Reverted" critical />
                     : change.rejectedAt ? <Chip label="Rejected" critical />
                       : change.supersededAt ? <Chip label="Superseded" critical />
-                        : <Button label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : itemStatus === 'blocked' ? 'Waiting for its dependencies' : itemStatus === 'failed' ? 'This step failed' : 'Waiting for the review that comes next'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} variant={waitingOnYou ? 'inverse' : 'secondary'} />}
+                        : <Button label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : itemStatus === 'blocked' ? 'Waiting for its dependencies' : itemStatus === 'failed' ? 'This step failed' : 'Waiting for the review that comes next'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} variant={waitingOnYou ? 'inverse' : 'primary'} />}
                 {canReject ? <Button label="Reject" onPress={() => onReject(activeRun, change.id)} variant="inverse" /> : null}
               </View>
             </View>;
