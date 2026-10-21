@@ -1,601 +1,567 @@
-# Dispatch AI native: design plan
+# Dispatch AI native: the design
 
-Status: proposed, not started.
-Evidence base: real screens captured from the running app at 1500x1000, plus the source.
-Scope: visual and interaction design only. Behaviour contracts stay as they are.
+Design method: **oxfords** (installed from `arhamhi/oxfords@oxfords`). Oxfords decides what
+goes on a screen, where, how visible, how it responds, and what must not be there. It does
+not pick a brand, so the Dispatch logo keeps owning the colour, and oxfords decides the
+roles that colour plays.
+
+Slop checker: `node scripts/check-rn.mjs` (in the app repo) runs oxfords' own checker and
+adds the React Native equivalents of the same rules, because the oxfords checker is
+written for web CSS and reads a React Native stylesheet almost blind.
+
+Current state of the app against the checker: **290 fail, 32 warn**. That number is the
+work list. It goes to zero.
+
+Status: proposed, not started. Evidence is real screenshots of the running app.
 
 ---
 
-## 0. How this plan was made
+## 0. Evidence
 
-### 0.1 Screenshots (real app, not mockups)
+Screens captured from the running app at 1500x1000 with
+`.scratch/native-ui-mastery/click-capture.ps1`:
 
-Captured with `.scratch/native-ui-mastery/click-capture.ps1`, which moves the real window,
-clicks a real control and copies the window rectangle off the screen:
+| File | Screen | What it shows |
+|---|---|---|
+| `x-dispatch.png` | Dispatch | content floating in the middle of a wide pane, preset text clipped, a notice sitting on top of the content |
+| `x-design.png` | Design studio | six full-height empty columns where a filmstrip belongs |
+| `x-results.png` | Results | a heading and 900px of nothing |
+| `x-teams.png` | Teams | a dashed empty box on 60% empty page |
+| `x-agents.png` | Agents | |
+| `x-plugins.png` | Plugins | |
+| `s-settings.png` | Settings | a 760px column in a 1500px window, a tall stack of full-width inputs |
 
-| File | Screen |
+Oxfords' four tests against the current Dispatch screen:
+
+- **Squint.** The mint "Start run" button lands first, then the headline. The right thing
+  to land first is the task composer, because that is what the person came to use.
+- **Subtract.** Remove the eyebrow, the 4px nav dot, the status pips, the account circle,
+  the "SET" tag, the output chips and the mint on every button. Nothing gets worse. All
+  of it goes.
+- **Swap.** Put another agent tool's logo on it and it still fits. The content is generic.
+- **Defend.** Most values cannot be defended today. The 43px hero, the 10px caps labels,
+  the four near-black surfaces and the mint buttons are all defaults.
+
+---
+
+## 1. Intent
+
+Dispatch is a work tool for someone coordinating a team of agents. They arrive with one
+question: **what should the team do next, and what did it produce?**
+
+Two jobs, and only two:
+
+1. **Start work.** Say what should happen, pick the team, start the run.
+2. **Review what came back.** Read the plan, inspect code proposals, approve or reject.
+
+Everything else in the app (plugins, workflows, usage, hierarchy) is reference or
+configuration. It must be reachable in one step from where the work happens, and it must
+never compete with the two jobs above.
+
+The control that does the job comes first: the composer on Dispatch, the decision row on
+Results.
+
+---
+
+## 2. Content first
+
+Every label in the app, written before any layout. Oxfords rule: one surface does one job,
+and the copy is the plain sentence a colleague would say.
+
+**Navigation (5 items plus settings at the bottom)**
+
+| Item | Goes to |
 |---|---|
-| `x-dispatch.png` | Dispatch home |
-| `x-design.png` | Design studio |
-| `x-results.png` | Results and review (no runs yet) |
-| `x-teams.png` | Teams (no teams yet) |
-| `x-agents.png` | Agents |
-| `x-plugins.png` | Plugins |
-| `s-settings.png` | Advanced settings |
+| Dispatch | compose and start a run |
+| Runs | past runs, their plans, reviews and proposals (tabs inside) |
+| Team | teams and agents (tabs inside) |
+| Studio | the design canvas |
+| Templates | saved workflows and capabilities (tabs inside) |
+| Settings | provider, project, review policy, usage (tabs inside) |
 
-### 0.2 What the pixels show
+Thirteen sidebar items become five. The rest become tabs inside the page that owns them,
+which is where oxfords puts views that belong to one subject.
 
-The problem is not "the taste is wrong". The taste in `src/theme.ts` is defensible: dark
-charcoal, one mint accent, Segoe UI Variable, Cascadia Code. What is wrong is that the
-system was never finished, and the app drifted away from its own tokens while the screens
-were built. Every complaint below traces to that.
+**Dispatch screen**
 
-Four things are true across all seven screens:
+- Title: "Dispatch"
+- Headline (the one hero figure in the app): "What should the team do?"
+- Body: "Say what should happen. The team plans it, does it, and hands the result back to
+  you for review."
+- Primary action: "Start run" (neutral button, not mint, because chrome stays neutral)
+- Composer placeholder: "Describe the work."
+- Composer hint: "Enter to run, Shift + Enter for a new line"
+- Run setup summary line: "No team selected. Reviews off." with a "Run setup" control
+- Mission presets (6): Polish a screen, Investigate a bug, Build a feature, Explore visual
+  directions, Review code, Polish a 3D render. Each with one line of what it produces and
+  a plain label for what it needs.
+- Starter prompts (3): Plan a project, Review a change, Make an image concept
 
-1. **The content floats in a hole.** `maxWidth: 690` (hero, presets), `750` (composer),
-   `760` (collections), `940` (teams) are four different caps, each centred inside a pane
-   that is 1128px wide at 1500px. On a 1500px monitor the right half of Dispatch, Teams,
-   Settings and Results is empty. `App.tsx:914`, `App.tsx:926-928`, `App.tsx:932`.
-2. **There is no shape language.** Button radii are 7, 8, 9 and 13. Heights are 30, 33,
-   34, 37, 38, 40, 42 and 49. Three different "primary" mint buttons exist with three
-   different geometries. `App.tsx:914`, `App.tsx:921`, `App.tsx:928`, `App.tsx:930`,
-   `App.tsx:933`.
-3. **There is no colour language.** 20+ hard-coded hex values sit outside `src/theme.ts`:
-   `#1C302D`, `#1E2526`, `#253631`, `#1B1F25`, `#181B20`, `#24231F`, `#554932`, `#E9CEA2`,
-   `#382522`, `#E6B7A8`, `#2B2B25`, `#1F302D`, `#29252D`, `#342A23`, `#18231F`, `#34483E`,
-   `#1D2827`, `#313A3B`, `#D7D8DB`, `#CCD0D3`, `#D3D6D9`, `#F1F4F3`. Four near-black
-   surfaces sit within 16 points of each other (`#14161B`, `#101216`, `#171A20`, `#1D2128`),
-   so surfaces do not separate and the borders carry the whole design.
-4. **The icons are drawings, not icons.** `src/DispatchIcon.tsx` builds every glyph from
-   `View` rectangles: the play icon is a CSS triangle, the sliders icon is three bars with
-   square knobs, the team icon is six rounded squares. At 19px they read as blobs. This is
-   the single biggest reason the controls look cheap.
+**Run thread**
+
+- "Team plan" (title)
+- Step rows: number, title, agent, model, state
+- Decision row: "Review before work starts" plus "Approve plan and start"
+- Agent messages: agent name, kind, body
+
+**Results and review**
+
+- "Runs" (title), "Review" (tab), "Proposals" (tab), "Images" (tab)
+- Proposal card: file path, state, summary, diff, one action ("Apply to project")
+
+**Empty states** (one sentence and the one action that fills it)
+
+| Screen | Sentence | Action |
+|---|---|---|
+| Runs | "No runs yet. A run keeps its plan, its handoffs and its review together." | Start a run |
+| Proposals | "No code proposals yet." | Start a run |
+| Images | "No images yet." | Start a run |
+| Team, teams | "No teams yet. A team is a set of agents with a chain of review." | Create a team |
+| Team, agents | "No agents yet. A planner writes the plan, a builder does the work, a reviewer checks it." | Add an agent |
+| Templates, workflows | "No saved workflows yet." | Save this run as a workflow |
+| Templates, capabilities | "All capabilities are off." | (no action, this is a setting) |
+| Studio | "No reference image. Drop one here or browse for a file." | Browse for a file |
+| Settings, usage | "No provider calls recorded yet." | (none, it fills itself) |
 
 ---
 
-## 1. Direction
+## 3. Layout on edges
 
-```
-TASTE CONTRACT - Dispatch AI (native Windows)
-Map:       Instrument (dense-technical, precise, calm). Not a cockpit, not editorial.
-Stack:     React Native Windows 0.84, StyleSheet tokens, react-native-svg for vectors.
-Type:      Segoe UI Variable Display (display) / Segoe UI Variable Text (body)
-           Cascadia Code (paths, ids, timestamps, diffs)
-Ground:    dark only. One canvas, four surface steps, hairline borders, no shadows.
-Accent:    mint #86E0C8. Used for primary actions, focus rings and selection only.
-           Never for body copy, never a second hue (the old #5E9D8D switch green dies).
-Density:   compact. 4px base unit, 8/12/16/24/32 rhythm, 12px card padding.
-Shape:     4 tag / 6 chip / 8 button+input / 12 card+panel. One scale, no exceptions.
-Motion:    120ms ease-out on state change (hover, press, focus, selection).
-           No entrance animation except run messages, which already use Reveal.
-Signature: a 2px accent rail on the active nav item, hairline rules instead of card
-           soup in lists, and monospace for every identifier and timestamp.
-Never:     gradients, glows, emoji, drop shadows, uppercase eyebrow labels on every
-           section, more than one accent hue, hand-drawn View icons, text clipped by
-           a card edge.
-Copy:      plain, second person, present tense, quiet. No em dashes. No sparkle words.
-```
+Oxfords: everything locks to an edge and creates the edge for the next. Fill empty space
+by moving content onto edges, not by adding content.
 
-Dials:
+### 3.1 The frame
 
-- `DESIGN_VARIANCE: 4` (offset, not arty). A work tool earns its layout from the work.
-- `MOTION_INTENSITY: 3` (state feedback only). Nothing moves that is not telling you
-  something changed.
-- `VISUAL_DENSITY: 6` (daily app, dense but breathable). The current 10px floor is denser
-  than this and reads as noise.
+One frame for every screen. The current app has four different content caps (690, 750,
+760, 940) each centred on its own, which is why nothing lines up.
+
+- Sidebar 240 wide, fixed. `240 + 24 + content` leaves the page itself.
+- Page padding 24 left and right, 20 top, 32 bottom.
+- Content area: full width of the page, no cap. The app has real wide content (diff
+  blocks, tables, image galleries) and a cap throws it away. Where a block must not run
+  full width (a form, a prose block, the composer), it takes a measure of 720 and sits on
+  the left edge, not centred.
+- Four left edges in the app, no more: sidebar edge, page edge, measure edge, and the
+  gutter inside a card.
+
+### 3.2 Shell
+
+- **Sidebar**: neutral, 240 wide, groups in relevance order. Workspace name at the top
+  with the logo. "New run" sits at the top as a neutral button (it starts the work, but it
+  is chrome, so it stays neutral and the composer owns the real primary action).
+  Items are an icon plus a short label, grouped: **Work** (Dispatch, Runs, Team, Studio,
+  Templates) and **Workspace** (Settings) at the bottom.
+- **Active item**: a full-row fill behind it, no coloured edge bar (the slop floor bans
+  the edge bar, and the current app has both the bar and a 4px dot).
+- **Top bar**: 56 high, holds the page title and the page's one primary action on the
+  right, plus the provider state as a word. No breadcrumb: the sidebar already says where
+  the user is, and "Dispatch AI / Dispatch" is the app's name twice.
+- **Account**: a row with the workspace name and a chevron that opens a menu. The current
+  initial-in-a-circle avatar is on the slop floor.
+- **Toasts**: one slot, bottom right, for results of actions, errors and undo. The current
+  notice banner sits on top of the content in the composer, which is neither a toast nor
+  an inline message.
+
+### 3.3 Breakpoints
+
+The window floor is 900 (native floor, asserted by `__tests__/layout-floor.test.ts`).
+
+| Width | Layout |
+|---|---|
+| 900 to 1039 | One column. The run setup opens as a modal. Sidebar keeps labels down to 900. |
+| 1040 to 1439 | Two columns where the content needs them (results list plus review). |
+| 1440 and up | Three columns for card grids and galleries. |
+
+No horizontal scrolling at any width. Text truncates with an ellipsis and the full value
+is available on hover and focus.
 
 ---
 
-## 2. Foundations
+## 4. Colour
 
-Everything below lives in `src/theme.ts` and is enforced by tests, not by discipline.
+The Dispatch logo owns mint. Oxfords decides what it is for.
 
-### 2.1 Colour ladder (replaces `colors`)
-
-Surfaces, cool near-black, each a real step so panels separate without shadows:
+**Neutrals do 75 to 85 percent of the screen.**
 
 | Token | Value | Use |
 |---|---|---|
-| `canvas` | `#0F1114` | app background, behind everything |
-| `surface` | `#14171B` | cards, panels, composer |
-| `surfaceRaised` | `#191D22` | inputs, hovered rows, chips |
-| `surfaceActive` | `#1F242A` | selected row, selected chip, pressed state |
-| `border` | `#23282F` | hairline separator, card edge |
-| `borderStrong` | `#2F363F` | input border, hover border |
+| `page` | `#0A0B0C` | app background |
+| `surface` | `#141516` | panels, cards, the composer |
+| `surfaceRaised` | `#1C1E20` | inputs, hovered rows, menus |
+| `surfaceActive` | `#26292B` | selected row, selected tab |
+| `line` | `#2A2D2F` | hairline between rows and sections |
+| `lineStrong` | `#6B7074` | input border (3:1 against the input fill) |
+| `text` | `#F5F5F5` | primary text |
+| `textQuiet` | `#A3A3A3` | secondary text |
+| `textMuted` | `#7E8287` | metadata, placeholders |
 
-Text:
+Surfaces get lighter as they rise and no shadow is used anywhere.
 
-| Token | Value | Measured contrast |
+**Palette (the brand mint, given oxfords roles)**
+
+| Role | Value | Job | Share |
+|---|---|---|---|
+| Lead | `#9AE2D2` | one solid block of content per screen, and the key figure | 10 to 15 percent |
+| Support | `#1F3B35` | a second block, or a second series | 5 to 10 percent |
+| Pop | `#E4FBF4` | one small mark: the badge that needs attention | 1 to 3 percent |
+
+Written reason: "The Dispatch mark is mint, so mint is the lead; the app is a dark
+desktop tool, so the mint lands on content, never on chrome."
+
+Where the lead goes, once per screen:
+
+- **Dispatch**: the composer. The composer is the surface the person came for, so it
+  carries the one lead block: mint fill with near-black text, 12px radius, the input
+  inside it in the same near-black. This is the single largest area of colour in the app
+  and it is on the thing that matters.
+- **Results**: the decision row for a proposal that needs a human. Mint fill, near-black
+  text, one action.
+- **Runs**: the key figure (tokens spent, plans complete) in the ruled strip.
+- **Team**: nothing. It is reference material, so it stays neutral.
+
+**State colours stay separate from the palette, each paired with a word.**
+
+| State | Colour | Word |
 |---|---|---|
-| `ink` | `#F2F4F6` | 16.31:1 on `surface`, 17.15:1 on `canvas` |
-| `inkSecondary` | `#B9C0C9` | 9.80:1 on `surface` |
-| `inkMuted` | `#8A929C` | 5.71:1 on `surface`, 6.01:1 on `canvas` |
+| attention | `#E9BD79` | "Needs review" |
+| critical | `#F49090` | "Failed" |
+| neutral | `#7E8287` | "Blocked", "Cancelled" |
 
-Accent and status:
+**Rules that replace what the app does now**
 
-| Token | Value | Use |
-|---|---|---|
-| `accent` | `#86E0C8` | primary button fill, focus ring, selection. 11.57:1 on `surface` |
-| `accentInk` | `#0B1512` | text on the accent fill (11.95:1) |
-| `accentSubtle` | `#123028` | selected chip fill, selected row tint (accent on it 9.13:1) |
-| `accentFocus` | `#B6EFE1` | focus ring on an accent fill |
-| `danger` | `#F18D92` | destructive text and icon (7.31:1 on `dangerSubtle`) |
-| `dangerSubtle` | `#2A1618` | destructive surface |
-| `warning` | `#E9BD79` | warning text and icon (9.63:1 on `warningSubtle`) |
-| `warningSubtle` | `#241C10` | warning surface |
+- Buttons, tabs, inputs, the sidebar and the top bar are neutral. The primary button is
+  white (`#F5F5F5` fill, `#0A0B0C` text), not mint. The current app has four mint
+  controls; none of them survives.
+- The lead colour is never small text. Today the eyebrow, the preset meta, the link text
+  and the section label are all mint at 10 or 11px.
+- Chips are quiet by default: plain text or a neutral outline. Only a state that needs
+  attention gets a tint, and only one per screen.
+- One palette, three roles, each doing one job.
 
-Measured with `.scratch/native-ui-mastery/contrast.mjs`, and re-measured by a test in
-`__tests__/theme.test.ts` so a token change cannot quietly break contrast.
+---
 
-Border note: `border` and `borderStrong` are decorative separators, 1.2:1 and 1.5:1
-against `surface`. That matches Fluent, the system this app sits on, where the resting
-control border is subtle and identification comes from the fill plus the focus ring. The
-focus ring is the 3:1 element and it is `accentFocus` on every surface. If WCAG 1.4.11 is
-required for the resting input border as well, `borderStrong` becomes `#5E6875`, which is
-visibly heavier and is the one token worth arguing about.
+## 5. Type
 
-
-Rules:
-
-- No hex literal anywhere outside `src/theme.ts`. A test greps the source for
-  `#[0-9A-Fa-f]{6}` outside the token file and fails the build. This is the single
-  highest-value change in the plan: it stops the drift that produced this mess.
-- The accent is never used for body copy. Today `heroEyebrow`, `promptCardMeta`,
-  `savedTeamActionText` and `textAction` are all accent-coloured 10-11px text. They become
-  `inkSecondary`, and the accent stays on the action itself.
-- One green only. `#5E9D8D` (the hand-rolled switch) is replaced by `accent`.
-
-### 2.2 Type scale (replaces `type`)
-
-The existing scale is 30/20/15/13/12/11/10, but the screens also use 43, 34, 17, 14 and 9.
-New scale, and every screen uses only these:
+The system stack is the right answer on Windows. Segoe UI Variable for the interface,
+Cascadia Code for figures, paths, identifiers and diffs. Two families, each with a job.
 
 | Token | Size/Line | Weight | Use |
 |---|---|---|---|
-| `display` | 30/38 | 600 | page title |
-| `title` | 20/26 | 600 | section heading, hero headline |
-| `heading` | 15/21 | 600 | card title, dialog title |
-| `bodyLarge` | 14/21 | 400 | hero body, composer input |
-| `body` | 13/19 | 400 | default body, list text |
-| `label` | 12/16 | 600 | button label, field label, table header |
-| `meta` | 11/15 | 500 | section label, secondary line, timestamp |
-| `code` | 12/17 | 400 | Cascadia Code, paths, ids, diffs |
-| `codeSmall` | 11/15 | 400 | diff gutter only |
+| `hero` | 28/34 | 600 | the one figure outside the scale, on Dispatch only |
+| `title` | 20/26 | 600 | page title |
+| `section` | 16/22 | 600 | section title, card title |
+| `body` | 14/20 | 400 | default text |
+| `bodySmall` | 13/18 | 400 | secondary text, table cells |
+| `label` | 12/16 | 600 | field label, button label, table header |
+| `meta` | 11/15 | 500 | metadata, timestamps, paths |
 
-- The floor stays 10px, but only the diff gutter uses it. Everything that is content is
-  11px or larger. `__tests__/type-floor.test.ts` gains a scale check: a font size outside
-  the table is a failure, not a suggestion.
-- The hero headline drops from 43px to 40px and the page title from 34px to 30px so the two
-  are one family instead of two.
-- Line height is always at least 1.4x the size. The floor test already holds this.
-
-### 2.3 Eyebrow rule
-
-Eleven uppercase micro-labels compete today (`collectionPath`, `promptHeading`, `navLabel`,
-`threadKicker`, `planBlockTitle`, `codeProposalLabel`, `fieldLabel`, `agentPermissionFoot`,
-`hierarchyRankTitle`, `pluginCategory`, `boardKind`). They stop being decoration:
-
-- At most one eyebrow per screen section. Section headings stand on their own.
-- The eyebrow becomes `meta` size (11px), letter spacing 0.8, weight 600, colour
-  `inkMuted`. Not 10px/1.5 spacing.
-- The path breadcrumb (`WORKSPACE / TEAMS`) survives as the one eyebrow per page.
-
-### 2.4 Space, radius, elevation, motion
-
-- Space: 4, 8, 12, 16, 20, 24, 32, 48. Every padding in the app maps to one of these.
-- Radius: 4 (tag), 6 (chip), 8 (button, input), 12 (card, panel), pill (switch, status).
-  No 7, 9, 10, 11 or 13 anywhere.
-- Elevation: no shadows. Dark UIs read better with one border and a surface step.
-- Motion: 120ms, ease-out, opacity and transform only. Hover changes surface or border.
-  Pressed state is `opacity 0.82` on the control, never a layout change.
+- Nothing under 11px, anywhere, including diff gutters. The current app has 10px in
+  134 places.
+- Body leading 1.43, display leading 1.2, tracking -2 percent on the hero only.
+- Monospace for every number a person compares: token counts, times, file paths, step
+  numbers, diff line numbers. Right-aligned in tables.
+- No display face on labels, buttons or data. Segoe UI Variable Display is used for the
+  hero and the page title only.
 
 ---
 
-## 3. Iconography and brand (the SVG question)
+## 6. Components
 
-### 3.1 Why the logo is a PNG today
+One set, in `src/ui.tsx`. Every screen uses these and nothing else.
 
-`assets/dispatch-mark.svg` exists and is the source of truth: 8.6KB, `viewBox 0 0 256 256`.
-The app does not read it. `scripts/render-logo.mjs` rasterises it with `@resvg/resvg-js`
-into `assets/dispatch-mark.png` (768x768, 116KB), and `App.tsx:296` loads the PNG.
-`scripts/build-agent-avatars.mjs` does the same for 199 agent marks (1.17MB of PNG).
+**Button**
 
-The reason is real: React Native has no SVG renderer and React Native Windows does not
-ship one either. `Image` takes bitmaps.
+| Variant | Fill | Text | Border | Height | Radius |
+|---|---|---|---|---|---|
+| primary | `#F5F5F5` | `#0A0B0C` | none | 36 | 8 |
+| secondary | `#1C1E20` | `#F5F5F5` | `#2A2D2F` | 36 | 8 |
+| ghost | transparent | `#A3A3A3` | none | 36 | 8 |
+| critical | transparent | `#F49090` | `#4A2A2A` | 36 | 8 |
 
-### 3.2 The fix
+One primary per screen region. Horizontal padding 14, label 12/16 weight 600, icon 16
+with a 8px gap. Disabled keeps the shape and says why next to it. Pressed is opacity
+0.82. Focus is a 2px ring in `#9AE2D2` at 2px offset, drawn as a ring.
 
-`react-native-svg@15.16.0` ships a Windows implementation (the published package contains
-`windows/RNSVG.sln` and `windows/RNSVG/`), so it autolinks into this app the way
+**Input**: height 36, radius 8, fill `#1C1E20`, border `#6B7074`, label above in `label`
+size, error below the field saying how to fix it, the value kept after an error.
+
+**Toggle**: track 36x20, thumb 16, off `#26292B`, on `#F5F5F5`. The current switch is a
+second green (`#5E9D8D`) that matches nothing else in the app.
+
+**Chip**: quiet. 11/15 in `#A3A3A3`, neutral outline or no fill. A state that needs
+attention gets the attention colour and a word.
+
+**Row**: height 36, hairline below, text left, value right in monospace with tabular
+figures, one visible action per row. Never a line and a fill and a border together.
+
+**Section**: title 16/22, optional supporting line 13/18, optional action on the right,
+one hairline under it. No uppercase label above it (the slop floor bans the eyebrow).
+
+**Empty state**: 40px icon, title 16/22, one sentence 13/18, one action.
+
+**Toast**: bottom right, 360 wide, radius 8, fill `#1C1E20`, border `#2A2D2F`, title
+13/18, one action where undo exists. Replaces the banner that sits on the content now.
+
+**Icons**: one set, one weight, 16 and 18 and 20 sizes, stroke matched to the text.
+Vendored SVG, not drawn.
+
+---
+
+## 7. Iconography and the logo
+
+**Why the logo is a PNG today.** `assets/dispatch-mark.svg` is the source of truth:
+8.6KB, `viewBox 0 0 256 256`. `scripts/render-logo.mjs` rasterises it with
+`@resvg/resvg-js` into `assets/dispatch-mark.png` (768x768, 116KB) and `App.tsx:296`
+loads the bitmap. The 199 agent marks are the same trick, 1.17MB of PNG.
+
+The reason is that React Native and React Native Windows have no SVG renderer. The fix is
+`react-native-svg@15.16.0`, whose published package ships a Windows implementation
+(`windows/RNSVG.sln`, `windows/RNSVG/`), so it autolinks into this app the way
 `@react-native-async-storage/async-storage` already does.
 
-1. Add `react-native-svg@15.16.0`. Rebuild, confirm the native module registers (the same
-   `nativeModuleProxy` path that now carries AsyncStorage carries this).
-2. Render the real brand mark as SVG, tinted with `currentColor` so it can follow the
-   active/disabled state instead of being a fixed bitmap.
-3. Delete `assets/dispatch-mark.png` and the 199 avatar PNGs. Ship the SVGs (or a small
-   subset) and rasterise nothing at build time.
-4. Replace `src/DispatchIcon.tsx` entirely with a vector icon set. One family, one stroke
-   weight, 24px grid, 1.6px stroke, round caps. Icons needed:
-   `dispatch`, `team`, `run`, `review`, `artifacts`, `settings`, `plus`, `send`, `close`,
-   `check`, `spark`, `search`, `folder`, `file`, `chevron`, `warning`, `shield`.
-   Draw them as SVG paths in one file so the set stays consistent.
-5. Icon sizes: 16 for inline, 18 for nav and buttons, 20 for section headers, 24 for
-   empty states. Never 15 or 19 (today's values).
+With it:
 
-If `react-native-svg` cannot be built in this environment, the fallback is to keep the PNG
-route but render at 2x the largest use size (88px for the 44px mark) and cut the file from
-116KB to about 12KB. That fixes weight, not crispness. The SVG route is the real fix.
+1. The logo renders from the real SVG file, tinted with `currentColor`, so it can follow
+   the active or disabled state.
+2. The 199 avatar PNGs and the logo PNG are deleted. The SVG source is the asset.
+3. `src/DispatchIcon.tsx` is deleted. It builds every glyph from `View` rectangles, which
+   is why the controls look cheap: the play icon is a CSS triangle, the sliders icon is
+   three bars with square knobs.
+4. Icons come from one existing set, vendored as SVG source and rendered with
+   `react-native-svg`'s `SvgXml`, so no extra build step is needed. Tabler Icons (MIT) or
+   Phosphor (MIT), one family, one stroke weight. The skill is explicit: do not invent
+   icon shapes, use the set.
 
-### 3.3 Icon rules
-
-- One family, one stroke width. Icons are drawn, not assembled from rectangles.
-- An icon never carries meaning alone: every icon-only button has an accessibility label
-  and a tooltip.
-- Active state changes colour, never size or position.
+Icons needed: dispatch, team, runs, review, artifact, template, settings, plus, send,
+close, check, search, folder, file, chevron, warning, shield, play, stop.
 
 ---
 
-## 4. Component specs
+## 8. The screens
 
-New file `src/ui.tsx` holds the primitives so every screen uses the same ones.
+### 8.1 Dispatch
 
-### 4.1 Button
+- Sidebar, top bar with the title "Dispatch" and no primary action (the composer has it).
+- Page: the hero (28/34), one body line (14/20, measure 720).
+- Mission presets: a 3-column grid at 1440, 2 at 1040, 1 below. Card: radius 12, border
+  `line`, fill `surface`, padding 16. Title 13/18 weight 600, one line 12/17, and a quiet
+  meta line 11/15 saying what the preset needs. The current cards clip their text; they
+  wrap to two lines with an ellipsis on the third, and the full text is on hover.
+- Starter prompts: three chips on one line, neutral outline.
+- Composer: the one lead block. Mint fill, near-black text, radius 12, padding 16, input
+  14/21 in near-black on the mint? No: the input sits on a near-black field inside the
+  mint block, so the text is `#F5F5F5` on `#0A0B0C`. Row of controls at the bottom:
+  "Browse files" ghost on the left, the keyboard hint in the middle, "Start run" primary
+  on the right.
+- Run setup: no side panel. One line under the composer with the current setup and a
+  "Run setup" control that opens a modal: two columns of fields, advanced options
+  collapsed, one action "Save setup". A modal is used because the setup is complex and
+  belongs to the page behind it, and it is followed by a toast.
+- Provider not set: one inline line under the composer, in the attention colour with the
+  word "Provider not set" and a link to Settings. Not a banner over the page.
 
-| Variant | Fill | Text | Border | Radius | Height |
-|---|---|---|---|---|---|
-| primary | `accent` | `accentInk` | none | 8 | 36 |
-| secondary | `surfaceRaised` | `ink` | `borderStrong` | 8 | 36 |
-| ghost | transparent | `inkSecondary` | none | 8 | 36 |
-| danger | `dangerSubtle` | `danger` | none | 8 | 36 |
+### 8.2 Runs
 
-- Horizontal padding 14, gap 8 between icon and label, label 12/16 weight 600.
-- One primary action per screen region. `Start run`, `Approve plan and start`, `Save and
-  test`, `Create team` are all primary, and no screen shows two primaries at once.
-- Disabled: `surfaceRaised` fill, `border` border, `inkMuted` text, cursor default, and
-  the accessibility state says disabled. A disabled primary must still read as a button.
-- Pressed: opacity 0.82. Hover: border step up one. Focus: 2px `accentFocus` ring with
-  2px offset, drawn as a ring, never as a background change.
-- Today: three mint buttons with three geometries, a grey send button that turns mint,
-  and a `planApproveButton` used for five different intents.
+- Title "Runs", with a segmented control for List and Board.
+- List: a row per run. Left: the brief, 13/18, one line, ellipsis. Right: the state chip
+  and the updated time in monospace. One action per row: open.
+- Board: four columns (Ready, Working, Blocked, Done), each 280 wide, cards radius 8,
+  title 13/18, owner avatar 20, dependencies in meta.
+- Run detail (a run opens in place, not on a new page): the plan, the thread, the
+  proposals and the images as tabs. Oxfords: tabs add views without growing the shell.
 
-### 4.2 Icon button
+### 8.3 Results and review
 
-32x32 hit area, 16px icon, transparent fill, `border` on hover, `accentFocus` ring on
-focus. Used for close, dismiss, change avatar. Every one has an accessibility label that
-matches what it does ("Dismiss notice", "Close team editor").
+This is the surface the product earns its keep on, so it gets the width.
 
-### 4.3 Text input
+- Two columns: a runs list 300 wide on the left, the selected run's review on the right.
+  At 1040 the list collapses into a select.
+- The run review is tabs: Plan, Proposals, Images, Notes.
+- A proposal card: the path in Cascadia Code 12/17, the state chip, the summary, then the
+  diff in a bordered block with a 1px gutter column and monospace line numbers. The
+  current diff rows have no container.
+- The decision row is the one lead block on this screen: mint fill, near-black text, one
+  action "Apply to project", and "Undo" as a ghost where it applies.
+- "Show complete contents" is a ghost button that expands the block in place.
+- No runs: the empty state from the table in section 2, with "Start a run".
 
-- Height 36, radius 8, fill `surfaceRaised`, border `borderStrong`, padding 12.
-- Label above the field in `label` size, 6px gap, `inkSecondary`.
-- Placeholder `inkMuted`, value `ink`, caret `accent`.
-- Focus: border `accent`, ring `accentFocus` at 30% opacity.
-- Error: border `danger`, message under the field in `danger`.
-- Today the inputs are 10px labels with 11px values and no focus treatment worth the name.
+### 8.4 Team
 
-### 4.4 Toggle
+- Title "Team", tabs: Teams, Agents.
+- Teams tab: a 2-column grid of team cards. Card: title 16/22, member avatars 24 in a row
+  with names in meta, state chip, one action.
+- Agents tab: a 3-column grid of agent cards. Avatar 40, name 13/18 weight 600, rank and
+  model in meta, then the permission toggles.
+- The current "CHANGE AVATAR" caps label under every avatar becomes a small ghost icon
+  button on hover and focus, always reachable by keyboard.
 
-Track 36x20, thumb 16, radius pill. Off: track `surfaceActive`, thumb `inkMuted`. On: track
-`accent`, thumb `accentInk` (the current `#5E9D8D` thumb is a second green). Label 12/16,
-supporting line 11/15 `inkMuted`. Whole row is the target (min 44px tall).
+### 8.5 Studio
 
-### 4.5 Tag and status chip
+- Title "Studio".
+- Left: the canvas, the reference image at its natural ratio inside a 1px border with a
+  12px radius, centred in the area with empty space around it.
+- Right: a 320 panel with the callout list, the note composer and "Send to agent chat".
+- The frame history is a horizontal filmstrip of 120x80 thumbnails at the top of the
+  canvas, scrollable, selected frame outlined in `lineStrong`. The current screen is six
+  full-height empty columns.
 
-One component, two intents:
+### 8.6 Templates
 
-- `status` (state): radius 4, padding 2/6, 11/15 weight 600, uppercase.
-  Colours by meaning: `accent` text on `accentSubtle` for good, `warning` on
-  `warningSubtle`, `danger` on `dangerSubtle`, `inkMuted` on `surfaceRaised` for neutral.
-- `meta` (label): radius 6, padding 3/8, 11/15, `inkSecondary` on `surfaceRaised`.
+- Title "Templates", tabs: Workflows, Capabilities.
+- Workflows: the same card component as the mission presets, so the app reads as one
+  system. An editor opens as a modal with two columns.
+- Capabilities: a list of the four capabilities, one row each, name, what it does, and a
+  toggle on the right. Not a grid of cards, because a capability is a setting, not an
+  object.
 
-Today there are six unrelated tag systems: `SET`, `CUSTOM`/`DEFAULT`/`SETUP`, `ACTIVE`,
-`PROPOSAL`/`APPLIED`/`REJECTED`/`REVERTED`/`SUPERSEDED`, `NEW FILE`/`DIFF`, `READY`/
-`WORKING`/`BLOCKED`/`DONE`/`FAILED`/`CANCELLED`/`REVIEW`, plus `PROJECT SCOPED`,
-`LOCAL`, `TEAMS`, `NATIVE COORDINATOR`.
+### 8.7 Settings
 
-### 4.6 Card
-
-Radius 12, border `border`, fill `surface`, padding 16. A card is used only when the
-content is a unit the user can act on. Lists of similar things use a hairline row list
-instead of a grid of cards.
-
-### 4.7 Section header
-
-Title 15/21 weight 600 in `ink`, optional supporting line 11/15 in `inkMuted`, optional
-action on the right. A 1px `border` rule under it. No eyebrow unless the section is a
-subsection of a page (one per page).
-
-### 4.8 Empty state
-
-Every collection screen needs one. It is a composition, not a dashed box:
-
-- 40px icon in a 56px `surfaceRaised` circle.
-- Title 15/21 `ink`.
-- One line 12/17 `inkMuted` saying what will appear here.
-- One action button when the user can create the thing.
-
-Today Results and review is a heading and 900px of void (`x-results.png`), and Teams uses
-a dashed-border rectangle with no icon and no action.
-
-### 4.9 Notice
-
-- Inline, inside the region that owns the message, not floating over the scroll content.
-- Radius 8, border 1, padding 10/12, text 12/17.
-- One accent per severity: warning text `warning` on `warningSubtle`, danger text
-  `danger` on `dangerSubtle`, info text `inkSecondary` on `surfaceRaised`.
-- Dismiss is a 24px icon button on the right.
-- Today the notice is a warm amber card (#24231F / #554932 / #E9CEA2) that sits on top of
-  the scroll view and covers the row above it (`App.tsx:344`, `App.tsx:928`).
-
----
-
-## 5. Shell layout
-
-### 5.1 Sidebar
-
-- Width 236 (from 228), padding 16, background `canvas`, right border `border`.
-- Brand block: 32px SVG mark plus "Dispatch" 15/21 weight 600 and "AI workspace" 11/15
-  `inkMuted` in caps, letter spacing 0.8. The 18px name and 10px caption become one size
-  pair with the rest of the app.
-- "New run" is a primary button, full width minus padding, height 36, radius 8.
-- Navigation: **labels, not glyphs**. Icon 18 plus label 13/19 in `inkSecondary`, active
-  item `ink` weight 600 with a 2px `accent` rail on the left edge of the row.
-- Groups, in this order, each with a 11px `inkMuted` label:
-  - Work: Dispatch, Run room, Results and review, Task board, Usage
-  - Team: Teams, Agents
-  - Library: Runs, Reviews, Artifacts, Workflows, Plugins
-  - Bottom: Advanced settings, then the local workspace card.
-- All 13 destinations are reachable without scrolling. Today the rail is 68px of glyphs
-  with a scrollbar and six destinations below the fold.
-- The rail keeps a 48px compact mode under 1040px, but that mode shows tooltips.
-
-### 5.2 Topbar
-
-- Height 56, border bottom `border`.
-- Left: page title 13/19 weight 600. The "Dispatch AI / Page" breadcrumb is dropped; the
-  sidebar already says what app this is.
-- Right: provider status as a dot plus 12/16 text, a 1px divider, and the account avatar
-  (28px, radius 14).
-- The stop-run control appears only while a run is active, styled as `danger` ghost, and
-  sits left of the status so it is not mistaken for a permanent control.
-
-### 5.3 Content frame (the biggest single fix)
-
-- One frame for every screen: padding 24 horizontal, 20 vertical, `maxWidth: 1180`,
-  `alignSelf: 'center'`.
-- Inside it, a 12-column grid with a 20px gutter, so a card grid, a two-column list and a
-  form line up with each other across screens.
-- Left-aligned content inside the frame, not centred: the frame is centred, the content
-  inside it is not. Today every block is centred separately, so nothing shares an edge.
-- Breakpoints: 900 (window floor, single column, run setup becomes a modal), 1040
-  (inspector becomes a modal), 1240 (two column grids), 1500 (three column grids).
-- The composer sits in the frame, 760 wide, left aligned, with the preset cards above it
-  at the same left edge and the same 760 measure.
+- Title "Settings", tabs: Provider, Project, Review, Usage.
+- Provider: two-column field grid at 1240 (endpoint and model side by side), API key full
+  width, then a status row with a word, then "Save and test" primary and "Remove key"
+  critical ghost.
+- Project: the folder picker, the file list, the preview. A file list is a list, not a
+  table of boxes.
+- Review: the review policy toggles, the checkpoint choice as a segmented control, the
+  concurrency cap as a segmented control (not nine chips).
+- Usage: the figures strip. At most four figures, in one ruled strip, each with a
+  comparison. Exact and estimated counts stay separate, and the estimated ones keep their
+  tilde. Then a table of calls: model, agent, time, tokens. Numbers right-aligned in
+  monospace.
 
 ---
 
-## 6. Screen by screen
+## 9. The invisible layer
 
-### 6.1 Dispatch home (`x-dispatch.png`)
+Oxfords: a finished product has as much interface hidden as visible. Listed before it is
+built.
 
-Current problems: the hero column floats in the middle of a wide pane; preset card text
-is cut mid-word ("preserving i..."); the "Start with a real task" pills overflow the column
-and are clipped by the pane edge; the notice overlaps that row; the inspector is a
-separate-looking 304px slab.
+| Surface | Hidden layer |
+|---|---|
+| Run rows | row menu (rename, duplicate, delete), relative time with the absolute value on hover |
+| Proposal card | copy path, copy diff, open in editor |
+| Agent cards | change avatar, edit memory, set rank |
+| File list | file actions on hover |
+| Tables | sort and filter, column widths remembered |
+| Team chips | remove a member without opening the editor |
+| Toast | undo for every destructive action |
 
-Changes:
-
-- Left-align the hero inside the frame. Hero: 40/46 display, body 14/21, max 54ch.
-- The eyebrow becomes one 11px mint line above the headline, or goes away. It is
-  currently three times louder than the headline.
-- Presets become a 3-column grid of cards at 12/16 gap, each card 320 wide, detail text
-  wrapped to 2 lines and never clipped. Card: title 12/16 weight 600, detail 11/15,
-  meta 11/15 in `inkSecondary` with the accent reserved for the first word only.
-- The three starter prompts become a single row of three chips on one line, so they stop
-  competing with the preset cards above them.
-- The composer becomes the anchor of the screen: 760 wide, left aligned with the presets,
-  radius 12, fill `surface`, border `borderStrong`, input 14/21, actions row with
-  "Browse files" as a ghost button on the left and "Start run" as the primary on the right.
-  The "Enter to run, Shift + Enter for a line break" hint moves to 11/15 `inkMuted` and
-  disappears when the input is empty.
-- The notice renders inside the composer area, above the input, never over the scroll
-  content.
-- The inspector becomes a right rail in the frame at 320 wide, separated by a 1px rule,
-  fill `canvas` (not a different grey), with sections: Agent team, Review policy, Review
-  outputs, and the approval note at the bottom. Section titles 12/16 weight 600.
-
-### 6.2 Run room and the run thread
-
-- The thread keeps a 760 measure, left aligned.
-- Plan steps become a table: index 20px, title 13/19 editable, agent and model 11/15
-  `inkMuted`, state as a status tag. Rows separated by hairlines, no card.
-- Agent messages: avatar 24, name 12/16 weight 600, kind as a tag, body 13/19. The
-  message block has no card, only a 1px left rule in `border`, so the thread reads as a
-  conversation rather than a stack of boxes.
-- The approve bar is a full-width row inside the thread, fill `surface`, border
-  `accentSubtle`, with the primary button on the right.
-
-### 6.3 Results and review (`x-results.png`)
-
-- With no runs: an empty state with an icon, "No runs yet", one line, and a "Start a run"
-  primary button. The screen is currently a heading over 900px of nothing.
-- With runs: a left column of runs (300 wide, selected row tinted `surfaceActive`) and a
-  right column with the review content, so the screen uses its width instead of floating
-  a 760 column in the middle.
-- Code proposal cards: path in Cascadia Code 12/17, status as a tag, summary as meta,
-  and the diff in a bordered block with a 1px gutter column. Today the diff rows have no
-  container and the "+/-" markers sit inline.
-- The apply button is the only primary on the card. "Show complete contents" is a ghost
-  button. "Undo applied change" is secondary and disabled when no project folder is set.
-
-### 6.4 Design studio (`x-design.png`)
-
-- The six full-height empty columns become a horizontal filmstrip of 120x80 thumbnails at
-  the top, scrollable horizontally, with the selected frame outlined in `accent`.
-- The canvas area below is the reference image at its natural aspect ratio, centred, with
-  a 1px border and a 12px radius, not an empty column.
-- The right side becomes a 320 panel with the callout list, the annotation composer and
-  the "Send to agent chat" primary. Today the screen is one row of empty bars.
-- Empty state when no image is loaded: an icon, "Drop a reference image", and a browse
-  button.
-
-### 6.5 Teams (`x-teams.png`)
-
-- Tab bar becomes a real segmented control: 36px height, radius 8, selected pill
-  `surfaceActive` with `ink` text, unselected `inkSecondary`.
-- The page keeps the left-aligned frame; the "Create team" primary moves into the section
-  header row on the right.
-- The empty state replaces the dashed box: icon, "No teams yet", one line, "Create team".
-- Team cards become a 2-column grid at 1240+, cards 320 wide.
-
-### 6.6 Agents
-
-- Agent cards become a 3-column grid, each 260 wide: avatar 40, name 15/21, rank as a
-  tag, model as meta, then the permission rows with toggles.
-- The "CHANGE AVATAR" label under the avatar becomes a small ghost icon button on hover
-  and focus, not permanent 10px caps text.
-
-### 6.7 Runs, Reviews, Artifacts
-
-- One collection header pattern: title 30/38, one line of body, one primary action.
-- Run rows: hairline separated list, status tag, brief as 13/19, meta as 11/15 mono.
-- Artifacts: a real gallery, 3 columns, images at 4:3 with a caption, not full-bleed
-  stacked cards.
-
-### 6.8 Task board
-
-- Columns for Ready, Working, Blocked, Done, each 280 wide, with a count in the header.
-  Today it is a flat list with a three-item summary line.
-- Cards show kind as a tag, title 13/19, owner avatar 20, dependencies as meta.
-
-### 6.9 Usage
-
-- The two totals become two large figures: 30/38 mono for the number, 11/15 label above.
-  Estimated counts keep their tilde and are visually separated from exact counts, which
-  the current design already does and must keep.
-- The call list becomes a table: model, agent, time, tokens. Hairline rows, mono numbers.
-
-### 6.10 Workflows and Plugins
-
-- Workflow cards match the preset cards from Dispatch (same component, so the app reads as
-  one system).
-- Plugin cards become a 2-column grid with the enable toggle on the right of the header,
-  and the category line demoted to 11/15 `inkMuted`.
-
-### 6.11 Advanced settings (`s-settings.png`)
-
-- The page currently floats a 760 column in the middle of a 1500px window with a huge
-  empty right side, and the provider card is a tall stack of full-width inputs.
-- New layout: left column 2fr (provider form, review policy), right column 1fr (project
-  files, agent permissions, workspace data). At 1040 it becomes one column.
-- The provider form becomes a two-column field grid (endpoint and model side by side at
-  1240+) with the API key full width.
-- Field labels are 12/16 weight 600 `inkSecondary`, not 10px caps.
-- The status line under the form is a status row with an icon, not a bare sentence.
-- Buttons: "Save and test" primary, "Remove key" danger ghost, "Refresh list" secondary.
+Every one of these is reachable by keyboard and has a visible equivalent on touch.
 
 ---
 
-## 7. States, motion, emptiness
+## 10. Done gate
 
-- Every interactive element gets: default, hover, focus-visible, pressed, disabled,
-  loading, error. The current app has default and pressed only.
-- Loading: skeletons that match the final layout (cards, rows), not a spinner.
-- Empty: section 4.8, on every collection screen.
-- Error: inline where it happened (a field, a file list) and in the notice channel
-  otherwise. Never a modal.
-- Motion: 120ms. The existing `Reveal` entrance for run messages stays, reduced-motion
-  aware. Nothing else animates in.
-- Focus: one focus ring style across the app, 2px `accentFocus`, 2px offset, drawn as a
-  ring. `FocusPressable` currently paints a fill, which is how the Design Studio callout
-  overlay ended up occluding the reference image.
+Oxfords requires an answer for every line, per screen.
 
----
-
-## 8. Accessibility floor
-
-- Body text 4.5:1, large text and icons 3:1, focus ring 3:1 against both adjacent
-  surfaces. A contrast test in `__tests__/theme.test.ts` checks every token pair used
-  together.
-- Every icon-only control has an accessible name that matches the visible text elsewhere.
-- Hit targets: 32px minimum for icon buttons in a desktop app, 44px for anything used
-  with a finger.
-- No information by colour alone: every status colour is paired with a word.
-- Windows text scaling to 2.25x is supported by the layout: no fixed heights on text
-  containers, no clipped text, no horizontal scroll at any width.
+**Buttons**: default, hover, focus-visible, pressed, disabled with the reason beside it.
+Loading only where the person waits (the run start). **Inputs**: label above, focus ring,
+error below that says how to fix it, value kept. **Every action**: a response within
+100ms where the person is looking, or a toast with undo. **Destructive**: undo where
+possible, otherwise a confirm that names the object and labels the button with the
+action. **Icon-only**: accessible name and tooltip, and a text label for anything not
+universally known. **Empty**: first run with one sentence and one action, and no results
+that quote what was searched. **Loading and failure**: a skeleton shaped like the result
+after 300ms, an error that says what failed and how to recover. **Messy content**: long
+names truncate with the full value available, 0, 1 and 10,000 rows all work, a missing
+image has a fallback. **Tables**: search, filter or sort, numbers right-aligned, one
+primary action per row. **Navigation**: current location shown as a full-row fill, items
+named for their contents, grouped, rare items last, five top-level items. **Keyboard**:
+everything reachable by Tab with a visible focus ring, Esc closes overlays, text 4.5:1,
+icons and focus rings 3:1, state never by colour alone. **Touch**: 24px floor on desktop,
+44px for anything used with a finger. **Motion**: feedback under 250ms, never blocking, a
+reduced-motion version that keeps the feedback. **Colour**: neutral base covering most of
+the screen, a named palette with a reason, all three colours used, each for one job.
+**Consistency**: one type family, one palette, one icon set at one weight, one radius per
+tier. **Slop floor**: the checker passes, or every warning has a one line reason.
 
 ---
 
-## 9. Sequencing
+## 11. Slop floor work list
 
-Each phase ends with the app running, the tests green, and a fresh screenshot set.
+From `node scripts/check-rn.mjs` on the current tree: 290 fail, 32 warn.
 
-**Phase 0. Harness (done).** Real screenshots exist and are reproducible:
-`.scratch/native-ui-mastery/click-capture.ps1`.
+| Rule | Count | Fix |
+|---|---|---|
+| text under 11px | 148 | the type scale in section 5. The diff gutter moves to 11px too. |
+| raw hex outside `src/theme.ts` | 121 | every literal becomes a token. The token file is the only place a colour is written. |
+| eyebrow, letter-spaced label | 23 | the eyebrow goes. Section titles carry themselves. |
+| lead colour fills a control | 21 | mint stops filling buttons, chips and pills. It becomes one block per screen. |
+| status dot | 9 | the word is the signal. The dot goes. |
+| drawn icon | 1 file | `src/DispatchIcon.tsx` is deleted and replaced with a vendored set. |
+| em dash in copy | 3 | fixed in this pass (`App.tsx`, `src/DesignStudio.tsx`, `src/RunWorkspace.tsx`). |
+| buzzword, vague button, emoji | 0 | nothing to do. |
 
-**Phase 1. Foundations.** `src/theme.ts` rewritten with the new ladder, scale and radii.
-`src/ui.tsx` created with Button, IconButton, TextField, Toggle, Tag, Card, SectionHeader,
-EmptyState, Notice. Tests: token contrast, scale conformance, no raw hex outside the
-token file.
+Two more rules the checker cannot see, found by looking:
 
-**Phase 2. Vector assets.** `react-native-svg` added and built. Brand mark rendered as
-SVG. `src/DispatchIcon.tsx` replaced with the vector set. Avatar PNGs replaced by SVG or
-dropped.
-
-**Phase 3. Shell.** Sidebar with labels and groups, topbar rewrite, content frame and
-grid, breakpoints. Every screen drops its own `maxWidth` caps.
-
-**Phase 4. Dispatch and the thread.** Home screen, composer, presets, run thread, plan
-table, agent messages, approve bar, inspector.
-
-**Phase 5. Review surfaces.** Results and review, code proposal cards and diff block,
-artifacts, usage.
-
-**Phase 6. Remaining screens.** Design studio, teams, agents, runs, reviews, artifacts,
-task board, workflows, plugins, settings.
-
-**Phase 7. States and motion.** Skeletons, empty states, error states, hover and focus
-rings, reduced motion.
-
-**Phase 8. Verification.** Full screenshot set at 900, 1240 and 1500 wide. Judge wave on
-the real pixels. Contrast and size tests. `tsc`, ESLint, jest.
+- A side panel holding three fields (the Run setup inspector). It becomes a modal.
+- The same figures repeated on several pages. Usage figures appear once, in Settings.
 
 ---
 
-## 10. Verification per phase
+## 12. Sequencing
 
+Each phase ends with the app running, the tests green, the checker count down, and a
+fresh screenshot set.
+
+**Phase 0. Harness.** Done. Real screenshots, reproducible with `click-capture.ps1`.
+The oxfords checker and the React Native wrapper are in place.
+
+**Phase 1. Foundations.** `src/theme.ts` rewritten with the neutral ladder, the palette
+roles, the type scale and the radius scale. `src/ui.tsx` with Button, IconButton, Input,
+Toggle, Chip, Row, Section, EmptyState, Toast. Tests: contrast for every token pair, the
+type scale conformance, no raw hex outside the token file, the radius scale.
+
+**Phase 2. Vectors.** `react-native-svg` installed and built. The logo renders from SVG.
+The icon set is vendored and `src/DispatchIcon.tsx` is deleted. The PNGs are deleted.
+
+**Phase 3. Shell.** Sidebar with five items and groups, top bar with the page title and
+its one action, the content frame, the toast slot, the breakpoints.
+
+**Phase 4. Dispatch.** Hero, presets, starter prompts, the composer as the one lead
+block, run setup as a modal, the thread, the plan rows, agent messages.
+
+**Phase 5. Results.** Runs list plus review, proposal cards, the diff block, the decision
+row as the one lead block, images, notes.
+
+**Phase 6. The rest.** Team, Studio, Templates, Settings with their tabs, Usage.
+
+**Phase 7. The invisible layer.** Row menus, hover actions, tooltips, sort and filter,
+undo, skeletons, error states, reduced motion.
+
+**Phase 8. Verification.** Screenshot set at 900, 1240 and 1500. The checker at zero
+fails. `tsc`, ESLint, jest. A judge wave on the real pixels.
+
+---
+
+## 13. Verification
+
+- `node scripts/check-rn.mjs` reports 0 fail. Warnings each carry a one line reason.
 - `npm test -- --runInBand` green, `tsc --noEmit` clean, ESLint at or below the frozen
   warning baseline.
-- Screenshot set regenerated with `click-capture.ps1` and compared against the previous
-  set by eye, side by side.
+- Screenshots regenerated at three widths and reviewed by the four oxfords tests.
 - Judge subagents score the real screenshots, not descriptions.
-- Every "fixed" claim names the file and line.
+- Every "fixed" claim names the file and the line.
 
 ---
 
-## 11. Explicitly not doing
+## 14. Decisions taken and open
 
-- No new colour hue. Mint stays the only accent.
-- No gradients, glows, glass, or drop shadows.
-- No new navigation pattern. The sidebar stays a sidebar.
-- No emoji. Icons come from the vector set.
-- No light theme. The app is a dark desktop tool.
-- No change to what the screens do. This plan is appearance and interaction, not
-  behaviour. Where a label is wrong (five vocabularies for run states), the fix is one
-  shared vocabulary, picked once and applied everywhere.
-- No Tailwind, no web CSS, no GSAP. React Native Windows keeps its own layout model.
+**Taken**
 
----
+- The brand mint stays, but it moves from chrome to content. Chrome is neutral.
+- The sidebar keeps labels. A 240px rail with five items is affordable at the 900 floor.
+- The run setup becomes a modal, not a side panel.
+- The primary button is white, not mint.
+- The eyebrow pattern goes.
 
-## 12. Open questions for the owner
+**Open, with the recommended default**
 
-1. **Icon family.** The vector set in 3.2 is drawn from scratch in the app's own stroke
-   style. If a licensed family (Tabler, Phosphor, Lucide) is preferred, it must ship a
-   Windows build or be vendored as SVG paths.
-2. **Sidebar labels.** Labels are recommended over a glyph rail. A labelled 236px rail
-   eats width on a 900px window; the compact glyph rail with tooltips is the alternative.
-3. **Results layout.** The two-column run list plus review column is recommended. A
-   single centred column is the alternative and keeps more width for diffs.
-4. **Mission presets.** Six presets as cards is the current shape. Three larger cards
-   plus a "More presets" link is the alternative.
+1. **Icon set.** Tabler Icons (MIT, 24px grid, 2px stroke) is the recommendation. Its
+   stroke is heavier than the app's text at 12px, so it needs a 1.75px variant to match.
+2. **Composer as the lead block.** Mint fill for the composer is the recommendation, since
+   the composer is the thing the person came for. The alternative is a neutral composer
+   and the lead on the Results decision row only, which is calmer but leaves Dispatch
+   monochrome.
+3. **Runs detail as tabs inside Runs.** The alternative is Results as its own top-level
+   item and five items becomes six.

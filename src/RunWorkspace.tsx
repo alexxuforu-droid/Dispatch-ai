@@ -220,7 +220,7 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
     <Text style={styles.section}>Run receipt</Text>
     <View style={styles.card}>
       {activeRun.items.map(item => <Text key={item.id} style={styles.body}>
-        • {item.title} — {item.status} ({activeRun.agentProfiles?.find(agent => agent.id === item.agentId)?.name ?? item.agentId})
+        • {item.title} ({item.status}, {activeRun.agentProfiles?.find(agent => agent.id === item.agentId)?.name ?? item.agentId})
       </Text>)}
       <Text style={styles.dim}>Started {new Date(activeRun.createdAt).toLocaleString()} · Updated {new Date(activeRun.updatedAt).toLocaleString()}</Text>
       {activeRun.messages.map(message => <View key={message.id} style={styles.receiptMessage}>
