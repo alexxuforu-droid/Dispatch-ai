@@ -3,7 +3,7 @@ import { Image, Modal, ScrollView, StatusBar, StyleSheet, Text, TextInput, useWi
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { DispatchIcon, IconName } from './src/DispatchIcon';
 import { agentAvatarIds, agentAvatarImages } from './src/agentAvatars';
-import { colors, radius, space, type, typography } from './src/theme';
+import { colors, space, type, typography } from './src/theme';
 import { MIN_WINDOW_WIDTH } from './src/layoutFloor';
 import { BuiltinPluginFlags, defaultAgentPermissions, DispatchWorkflow, loadWorkspaceSettings, saveWorkspaceSettings } from './src/persistence/workspace';
 import { clearProviderSecret, hasProviderSecret, saveProviderSecret } from './src/persistence/providerCredentials';
@@ -18,7 +18,7 @@ import { clearUsage, formatTokenCount, readUsage, rollUpUsage, UsageRecord } fro
 import { applyProjectFile, listProjectFiles, loadProjectRoot, ProjectEntry, readProjectText, removeProjectFile, selectProjectFolder } from './src/persistence/workspaceProject';
 import { DesignStudio } from './src/DesignStudio';
 import { Reveal, FocusPressable } from './src/Reveal';
-import { Button, Chip, EmptyState, Field, Row, Section, Toggle, Toast, ToastSlot } from './src/ui';
+import { Button, Chip, EmptyState, Row, Section, Toggle, Toast, ToastSlot } from './src/ui';
 import { RunRoom, ResultsStudio } from './src/RunWorkspace';
 import { missionPresets, workflowStarters } from './src/missions';
 

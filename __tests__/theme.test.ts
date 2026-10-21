@@ -17,7 +17,7 @@ import { colors, radius, space, type } from '../src/theme';
 
 const repoRoot = path.join(__dirname, '..');
 
-function sourceFiles(dir: string, out: string[] = []): string[] {
+function sourceFiles(dir: string): string[] {
   const stat = fs.statSync(dir);
   if (stat.isFile()) return dir.endsWith('.tsx') || dir.endsWith('.ts') ? [dir] : [];
   return fs.readdirSync(dir, { withFileTypes: true })
