@@ -5,6 +5,7 @@ import { diffLines } from './orchestration/diffLines';
 import { codeApplySecretBlock, steerActiveRun } from './orchestration/model-runner';
 import { FocusPressable } from './Reveal';
 import { Button, Chip, EmptyState, Section } from './ui';
+import { relativeTime } from './relativeTime';
 import { colors, radius, space, type, typography } from './theme';
 
 type RunChangeAction = (run: Run, changeId: string) => void | Promise<void>;
@@ -130,6 +131,7 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
   onOpenRun: (run: Run) => void;
 }) {
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
+  const [hoveredRun, setHoveredRun] = useState<string | null>(null);
   const [fullChangeId, setFullChangeId] = useState<string | null>(null);
   const activeRun = run ?? history[0] ?? null;
   const imageVersions = useMemo(() => activeRun?.artifacts.filter(artifact => artifact.kind === 'image') ?? [], [activeRun]);
@@ -168,10 +170,12 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
         accessibilityRole="button"
         accessibilityLabel={`Open ${item.mission?.name ?? 'run'}`}
         onPress={() => onOpenRun(item)}
+        onHoverIn={() => setHoveredRun(item.id)}
+        onHoverOut={() => setHoveredRun(current => current === item.id ? null : current)}
         style={({ pressed }) => [styles.runListItem, pressed && styles.pressed]}
       >
         <Text numberOfLines={1} style={styles.itemTitle}>{item.mission?.name ?? item.brief}</Text>
-        <Text style={styles.dim}>{new Date(item.updatedAt).toLocaleString()}</Text>
+        <Text style={styles.dim} accessibilityLabel={`Updated ${new Date(item.updatedAt).toLocaleString()}`}>{hoveredRun === item.id ? new Date(item.updatedAt).toLocaleString() : relativeTime(item.updatedAt)}</Text>
       </FocusPressable>)}
     </View> : null}
 

@@ -18,6 +18,7 @@ import { clearUsage, formatTokenCount, readUsage, rollUpUsage, UsageRecord } fro
 import { applyProjectFile, listProjectFiles, loadProjectRoot, ProjectEntry, readProjectText, removeProjectFile, selectProjectFolder } from './src/persistence/workspaceProject';
 import { DesignStudio } from './src/DesignStudio';
 import { Reveal, FocusPressable } from './src/Reveal';
+import { relativeTime } from './src/relativeTime';
 import { Button, Chip, EmptyState, Row, Section, Toggle, Toast, ToastSlot } from './src/ui';
 import { RunRoom, ResultsStudio } from './src/RunWorkspace';
 import { missionPresets, workflowStarters } from './src/missions';
@@ -79,7 +80,10 @@ function App({ initialScreen = 'dispatch' }: { initialScreen?: Screen } = {}) {
   const [runSetupOpen, setRunSetupOpen] = useState(false);
   const [reviewCode, setReviewCode] = useState(true);
   const [reviewImages, setReviewImages] = useState(true);
-  const [notice, setNotice] = useState('');
+  const [notice, setNoticeText] = useState('');
+  const [noticeUndo, setNoticeUndo] = useState<(() => void) | null>(null);
+  // Every notice replaces the one before it, so an undo never outlives the action it undoes.
+  const setNotice = (text: string) => { setNoticeText(text); setNoticeUndo(null); };
   const [settingsReady, setSettingsReady] = useState(false);
   const [settingsWritable, setSettingsWritable] = useState(false);
   const [providerReady, setProviderReady] = useState(false);
@@ -222,7 +226,8 @@ function App({ initialScreen = 'dispatch' }: { initialScreen?: Screen } = {}) {
       const appliedAt = new Date().toISOString();
       const updated: Run = { ...targetRun, changes: targetRun.changes?.map(candidate => candidate.id === changeId ? { ...candidate, appliedAt, reviewOverride: item.status === 'needs-approval' } : candidate), updatedAt: appliedAt };
       updateRun(updated);
-      setNotice(`Applied ${change.path} to the selected project.`);
+      setNoticeText(`Applied ${change.path} to the selected project.`);
+      setNoticeUndo(() => () => { void undoCodeChange(changeId, updated); });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The reviewed project change could not be applied.');
     } finally { setApplyingChanges(current => current.filter(id => id !== changeId)); }
@@ -291,7 +296,7 @@ function App({ initialScreen = 'dispatch' }: { initialScreen?: Screen } = {}) {
         </View>
       </View>
     </View>
-    <ToastSlot>{notice ? <Toast title={notice} onDismiss={() => setNotice('')} /> : null}</ToastSlot>
+    <ToastSlot>{notice ? <Toast title={notice} action={noticeUndo ? <Button label="Undo" onPress={() => { const undo = noticeUndo; setNoticeUndo(null); setNoticeText(''); undo?.(); }} variant="secondary" /> : undefined} onDismiss={() => setNotice('')} /> : null}</ToastSlot>
     <TeamPicker visible={teamPicker} roles={availableRoles} pending={pendingRoles} setPending={setPendingRoles} onAddRole={addCustomRole} onClose={() => setTeamPicker(false)} onSave={() => { saveRoles(); setSavedTeams(current => { const team = current.find(candidate => candidate.id === activeTeamId); if (!team) { const fallback = { id: 'team-default', name: 'Core team', description: 'Your primary agent team.', agentIds: pendingRoles }; setActiveTeamId(fallback.id); return [...current, fallback]; } return current.map(candidate => candidate.id === activeTeamId ? { ...candidate, agentIds: pendingRoles } : candidate); }); }} />
     <AvatarPicker visible={avatarPickerFor !== null} selected={avatarPickerFor ? agentAvatars[avatarPickerFor] ?? 1 : 1} onClose={() => setAvatarPickerFor(null)} onSelect={avatarId => { if (avatarPickerFor) setAgentAvatars(current => ({ ...current, [avatarPickerFor]: avatarId })); setAvatarPickerFor(null); }} />
     {screen === 'dispatch' && width < MIN_WINDOW_WIDTH && <Modal visible={runSetupOpen} transparent animationType="fade" onRequestClose={() => setRunSetupOpen(false)}>
@@ -672,13 +677,13 @@ function CollectionHome({ screen, roles, agentModels, agentAvatars, agentPermiss
 function RunCollection({ runs, onOpen }: { runs: Run[]; onOpen: (run: Run) => void }) {
   return <ScrollView style={styles.historyList} contentContainerStyle={styles.historyListContent}>{runs.map(run => {
     const completed = run.items.filter(item => item.status === 'done').length;
-    return <View key={run.id} style={styles.runCard}><View style={styles.runCardHeader}><View style={styles.savedTeamIcon}><DispatchIcon name="runs" size={19} color={colors.lead} /></View><View style={{ flex: 1 }}><Text style={styles.savedTeamName}>{new Date(run.createdAt).toLocaleString()}</Text><Text style={styles.savedTeamMeta}>{completed} of {run.items.length} work items complete · {run.messages.length} team updates</Text></View><Text style={styles.runCardStatus}>{run.status.replace('-', ' ')}</Text></View><Text style={styles.runCardBrief}>{run.brief}</Text><FocusPressable accessibilityRole="button" onPress={() => onOpen(run)} style={({ pressed }) => [styles.savedTeamAction, pressed && styles.pressed]}><Text style={styles.savedTeamActionText}>Open run in Dispatch</Text><Text style={styles.promptArrow}>↗</Text></FocusPressable></View>;
+    return <View key={run.id} style={styles.runCard}><View style={styles.runCardHeader}><View style={styles.savedTeamIcon}><DispatchIcon name="runs" size={19} color={colors.lead} /></View><View style={{ flex: 1 }}><Text style={styles.savedTeamName} accessibilityLabel={`Started ${new Date(run.createdAt).toLocaleString()}`}>{relativeTime(run.createdAt)}</Text><Text style={styles.savedTeamMeta}>{completed} of {run.items.length} work items complete · {run.messages.length} team updates</Text></View><Text style={styles.runCardStatus}>{run.status.replace('-', ' ')}</Text></View><Text style={styles.runCardBrief}>{run.brief}</Text><FocusPressable accessibilityRole="button" onPress={() => onOpen(run)} style={({ pressed }) => [styles.savedTeamAction, pressed && styles.pressed]}><Text style={styles.savedTeamActionText}>Open run in Dispatch</Text><Text style={styles.promptArrow}>↗</Text></FocusPressable></View>;
   })}</ScrollView>;
 }
 
 function ArtifactCollection({ runs, onOpen }: { runs: Run[]; onOpen: (run: Run) => void }) {
   const artifacts = runs.flatMap(run => run.artifacts.filter(artifact => !artifact.supersededAt).map(artifact => ({ run, artifact }))).reverse();
-  return <ScrollView style={styles.historyList} contentContainerStyle={styles.artifactGallery}>{artifacts.map(({ run, artifact }) => <View key={artifact.id} style={styles.artifactGalleryItem}><ImageArtifactCard artifact={artifact} /><Text style={styles.artifactRunMeta}>{new Date(run.createdAt).toLocaleString()} · {run.brief}</Text><FocusPressable accessibilityRole="button" onPress={() => onOpen(run)} style={({ pressed }) => [styles.savedTeamAction, pressed && styles.pressed]}><Text style={styles.savedTeamActionText}>Open the run and its review</Text><Text style={styles.promptArrow}>↗</Text></FocusPressable></View>)}</ScrollView>;
+  return <ScrollView style={styles.historyList} contentContainerStyle={styles.artifactGallery}>{artifacts.map(({ run, artifact }) => <View key={artifact.id} style={styles.artifactGalleryItem}><ImageArtifactCard artifact={artifact} /><Text style={styles.artifactRunMeta}>{relativeTime(run.createdAt)} · {run.brief}</Text><FocusPressable accessibilityRole="button" onPress={() => onOpen(run)} style={({ pressed }) => [styles.savedTeamAction, pressed && styles.pressed]}><Text style={styles.savedTeamActionText}>Open the run and its review</Text><Text style={styles.promptArrow}>↗</Text></FocusPressable></View>)}</ScrollView>;
 }
 
 function ImageArtifactCard({ artifact }: { artifact: Artifact }) {

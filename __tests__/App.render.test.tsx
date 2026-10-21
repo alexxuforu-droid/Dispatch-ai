@@ -1318,6 +1318,18 @@ test('pressing Undo applied change asks the app to undo that change', async () =
   await unmount(tree);
 });
 
+test('pressing a destination in the rail shows that screen', async () => {
+  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  expect(textNodes(tree.toJSON()).join(' \n ')).not.toContain('Design workspace');
+
+  await press(tree, 'Design studio');
+
+  // Every destination in the rail has to lead somewhere. A rail item that does nothing is
+  // worse than a missing one, because it looks like a working control.
+  expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Design workspace');
+  await unmount(tree);
+});
+
 test('pressing a run in the history opens that run', async () => {
   const run = resultsRun('done', resultsChange());
   // The history lists the other runs, so the run on screen is not the one in the list.
