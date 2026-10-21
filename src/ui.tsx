@@ -380,7 +380,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  iconButtonWrap: { alignItems: 'center' },
+  iconButtonWrap: { alignItems: 'center', position: 'relative' },
   tooltipLabel: { position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceRaised, ...type.meta, color: colors.text },
   iconButtonHovered: { backgroundColor: colors.surfaceActive, borderColor: colors.line },
 
