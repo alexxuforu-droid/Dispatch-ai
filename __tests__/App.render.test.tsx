@@ -907,7 +907,8 @@ test('closing the run setup panel drops its inspector content and leaves the com
   // Opened through the accessible action the composer shows at this width.
   await press(tree, 'Run setup');
   const opened = textNodes(tree.toJSON()).join(' \n ');
-  expect(opened).toContain('BEFORE YOU START');
+  // The panel names itself, rather than carrying an uppercase label above the title.
+  expect(opened).toContain('Run setup');
   expect(opened).toContain('Agent team');
   expect(opened).toContain('Review policy');
   expect(opened).toContain('Nothing is applied until you approve it');
