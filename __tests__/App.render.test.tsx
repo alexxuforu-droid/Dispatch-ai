@@ -1346,7 +1346,13 @@ test('pressing Start run plans the task and puts the run on screen', async () =>
   // screen. Both halves matter: a start that plans nothing is a silent no-op.
   expect(plan).toHaveBeenCalledTimes(1);
   expect(plan.mock.calls[0][0].brief).toBe(brief);
-  expect(textNodes(tree.toJSON()).join(' \n ')).toContain(brief);
+
+  // The run has to have landed, and the pending brief renders the same words as the run's
+  // own task block, so the words prove nothing. What proves it is the planning
+  // placeholder being gone and the run's own state being on screen.
+  const landed = textNodes(tree.toJSON()).join(' \n ');
+  expect(landed).not.toContain('Dispatch is creating a plan');
+  expect(landed).toContain('Plan ready');
 
   secret.mockRestore();
   plan.mockRestore();

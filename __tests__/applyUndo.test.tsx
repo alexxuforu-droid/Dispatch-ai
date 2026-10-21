@@ -18,13 +18,17 @@ jest.mock('@react-native-async-storage/async-storage', () => require('./asyncSto
 jest.mock('../src/persistence/workspaceProject', () => {
   const actual = jest.requireActual('../src/persistence/workspaceProject');
   const files: Record<string, string> = {};
+  const calls: { root: string; path: string; expected: string; replacement: string; createOnly: boolean }[] = [];
   return {
     ...actual,
     // The file map is the evidence, so the test can read it.
     files,
+    // The real native module refuses a write whose expected text no longer matches, so the
+    // arguments are recorded and checked rather than thrown away.
+    calls,
     loadProjectRoot: async () => 'C:\\work',
-    applyProjectFile: async (_root: string, path: string, _expected: string, replacement: string) => { files[path] = replacement; return replacement; },
-    removeProjectFile: async (_root: string, path: string) => { delete files[path]; return ''; },
+    applyProjectFile: async (root: string, path: string, expected: string, replacement: string, createOnly: boolean) => { calls.push({ root, path, expected, replacement, createOnly }); files[path] = replacement; return replacement; },
+    removeProjectFile: async (root: string, path: string, expected: string) => { calls.push({ root, path, expected, replacement: '', createOnly: false }); delete files[path]; return ''; },
   };
 });
 
@@ -51,7 +55,7 @@ import { resetAsyncStorageMock, storageBacking } from './asyncStorageMock';
 
 const App = require('../App').default;
 const { saveRunSnapshot } = require('../src/persistence/runStore') as typeof import('../src/persistence/runStore');
-const { files } = require('../src/persistence/workspaceProject') as { files: Record<string, string> };
+const { files, calls } = require('../src/persistence/workspaceProject') as { files: Record<string, string>; calls: { root: string; path: string; expected: string; replacement: string; createOnly: boolean }[] };
 
 jest.setTimeout(60000);
 
@@ -107,6 +111,7 @@ async function unmount(tree: ReactTestRenderer): Promise<void> {
 beforeEach(() => {
   resetAsyncStorageMock();
   for (const key of Object.keys(files)) delete files[key];
+  calls.length = 0;
   // The project the proposal writes into.
   storageBacking.set('dispatch.workspace.project.v1', 'C:\\work');
   files[PATH] = BEFORE;
@@ -135,8 +140,10 @@ test('applying a proposal writes the file, and the undo in the notice puts it ba
 
   await press(tree, 'Apply change');
 
-  // The file in the project now holds the new contents.
+  // The file in the project now holds the new contents, and it was written to the
+  // project that was chosen, with the text the proposal expected to find.
   expect(files[PATH]).toBe(AFTER);
+  expect(calls[0]).toEqual({ root: 'C:\\work', path: PATH, expected: BEFORE, replacement: AFTER, createOnly: false });
 
   // And the notice that reports it offers the way back.
   const undo = findByLabel(tree.toJSON(), 'Undo');
@@ -144,8 +151,10 @@ test('applying a proposal writes the file, and the undo in the notice puts it ba
 
   await press(tree, 'Undo');
 
-  // The file is back to what it was, and the change says it was reverted.
+  // The file is back to what it was, the undo wrote the old text over the new one, and
+  // the change says it was reverted.
   expect(files[PATH]).toBe(BEFORE);
+  expect(calls[1]).toEqual({ root: 'C:\\work', path: PATH, expected: AFTER, replacement: BEFORE, createOnly: false });
   expect(textNodes(tree.toJSON()).join(' \n ')).toMatch(/revert/i);
 
   await unmount(tree);

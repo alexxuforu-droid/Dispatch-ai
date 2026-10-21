@@ -168,17 +168,22 @@ const ACCEPTED = new Map([
   ['lead-text|src\\ui.tsx', 'the inverse button label on the lead block, which is the pairing that stays legible'],
 ]);
 
+const isAccepted = finding => ACCEPTED.has(`${finding.id}|${finding.file.replace(/\//g, '\\')}`);
+
 for (const entry of grouped.values()) {
   const where = entry.lines.join(', ') + (entry.count > entry.lines.length ? `, +${entry.count - entry.lines.length} more` : '');
   const reason = ACCEPTED.get(`${entry.id}|${entry.file.replace(/\//g, '\\')}`);
-  console.log(`${entry.level}  ${entry.id.padEnd(14)} ${entry.file}  (${where})  ${entry.message}${reason ? `  -- ${reason}` : ''}`);
+  // A finding that was decided on purpose is not a warning: it is accepted, and it says so.
+  const level = reason ? 'ACCEPTED' : entry.level;
+  console.log(`${level.padEnd(8)} ${entry.id.padEnd(14)} ${entry.file}  (${where})  ${entry.message}${reason ? `  -- ${reason}` : ''}`);
 }
 const failures = findings.filter(finding => finding.level === 'FAIL').length;
-const warnings = findings.filter(finding => finding.level === 'WARN').length;
+const warnings = findings.filter(finding => finding.level === 'WARN' && !isAccepted(finding)).length;
+const accepted = findings.filter(finding => finding.level === 'WARN' && isAccepted(finding)).length;
 const perRule = new Map();
 for (const finding of findings) perRule.set(finding.id, (perRule.get(finding.id) ?? 0) + 1);
 console.log('\nby rule: ' + [...perRule.entries()].sort((a, b) => b[1] - a[1]).map(([id, count]) => `${id} ${count}`).join(', '));
-console.log(`${files.length} files, ${failures} fail, ${warnings} warn`);
+console.log(`${files.length} files, ${failures} fail, ${warnings} warn, ${accepted} accepted with a stated reason`);
 
 // The oxfords checker runs too, so the web-oriented rules stay in the loop.
 const oxfords = join(process.env.USERPROFILE ?? '', '.agents', 'skills', 'oxfords', 'scripts', 'check.mjs');
