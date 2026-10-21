@@ -69,29 +69,35 @@ export function IconButton({
   icon,
   onPress,
   accessibilityLabel,
+  tooltip,
   disabled,
   style,
 }: {
   icon: React.ReactNode;
   onPress: () => void;
   accessibilityLabel: string;
+  /** The word for the control, shown when the pointer is on it. */
+  tooltip?: string;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <FocusPressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
-      style={({ pressed }) => [styles.iconButton, hovered && !disabled && styles.iconButtonHovered, disabled && styles.buttonDisabled, pressed && !disabled && styles.pressed, style]}
-    >
-      {icon}
-    </FocusPressable>
+    <View style={styles.iconButtonWrap}>
+      <FocusPressable
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityState={{ disabled: !!disabled }}
+        disabled={disabled}
+        onPress={onPress}
+        onHoverIn={() => setHovered(true)}
+        onHoverOut={() => setHovered(false)}
+        style={({ pressed }) => [styles.iconButton, hovered && !disabled && styles.iconButtonHovered, disabled && styles.buttonDisabled, pressed && !disabled && styles.pressed, style]}
+      >
+        {icon}
+      </FocusPressable>
+      {tooltip && hovered ? <Text style={styles.tooltipLabel}>{tooltip}</Text> : null}
+    </View>
   );
 }
 
@@ -320,7 +326,7 @@ export function Toast({
       </View>
       {action}
       {onDismiss ? (
-        <IconButton icon={<DispatchIcon name="close" size={14} color={colors.textQuiet} />} accessibilityLabel="Dismiss notice" onPress={onDismiss} style={styles.toastDismiss} />
+        <IconButton icon={<DispatchIcon name="close" size={14} color={colors.textQuiet} />} accessibilityLabel="Dismiss notice" tooltip="Dismiss" onPress={onDismiss} style={styles.toastDismiss} />
       ) : null}
     </View>
   );
@@ -374,6 +380,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
+  iconButtonWrap: { alignItems: 'center' },
+  tooltipLabel: { position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceRaised, ...type.meta, color: colors.text },
   iconButtonHovered: { backgroundColor: colors.surfaceActive, borderColor: colors.line },
 
   field: { gap: space.xs },
@@ -478,6 +486,5 @@ const styles = StyleSheet.create({
   toastTitleCritical: { color: colors.critical },
   toastBody: { ...type.meta, color: colors.textQuiet, marginTop: 2 },
   toastDismiss: { paddingHorizontal: space.sm, paddingVertical: space.xs },
-  toastDismissLabel: { ...type.meta, color: colors.textQuiet },
 });
 

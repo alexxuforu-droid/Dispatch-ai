@@ -366,5 +366,4 @@ const styles = StyleSheet.create({
   decisionText: { ...type.bodySmall, color: colors.page, fontWeight: '600', marginRight: 'auto' },
 
   receiptMessage: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: space.sm, gap: 2 },
-  
 });

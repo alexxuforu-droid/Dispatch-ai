@@ -65,8 +65,10 @@ export function useFocusRing() {
  * The indicator is a colour change, never a size change: a control that already has a border
  * gets its border recoloured, and one without gets a lighter surface. Adding a border on focus
  * would grow the control by a few pixels and shift the layout under the keyboard user's hands.
- * The colour is picked from the control's own fill, so a filled accent button (a mint
- * background) gets a lighter mint and a dark surface gets the raised tone.
+ * The colour is picked from the control's own fill: the ink on the lead block, the
+ * page colour on a light fill, and the lead colour on a dark surface. A control that
+ * carries a border has its border recoloured, which costs no reflow; one that does not
+ * is given a transparent border to recolour.
  */
 /** The light fills in the app. A focus ring has to be dark on these. */
 const LIGHT_FILLS = [colors.text, colors.textDim, colors.pop].map(value => value.toLowerCase());

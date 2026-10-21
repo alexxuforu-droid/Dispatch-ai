@@ -161,3 +161,36 @@ describe('the token file is the only place a colour is written', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+// The scale has to hold in the code that uses it, not only in the token file. Two sizes
+// that sat outside it were found this way: the brand name and the studio's add mark.
+describe('the screens follow the scale too', () => {
+  const appFiles = (): string[] => {
+    const files = [...sourceFiles(path.join(repoRoot, 'src')), path.join(repoRoot, 'App.tsx')];
+    return files.filter(file => path.resolve(file) !== path.join(repoRoot, 'src', 'theme.ts'));
+  };
+
+  test('every font size outside the token file is on the seven step scale', () => {
+    const allowed = new Set<number>(Object.values(type).map(style => style.fontSize));
+    const offenders: string[] = [];
+    for (const file of appFiles()) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const match of text.matchAll(/fontSize:\s*(\d+(?:\.\d+)?)/g)) {
+        if (!allowed.has(Number(match[1]))) offenders.push(`${path.relative(repoRoot, file)}: ${match[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('every radius outside the token file is on the radius scale', () => {
+    const allowed = new Set<number>(Object.values(radius).map(value => Number(value)));
+    const offenders: string[] = [];
+    for (const file of appFiles()) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const match of text.matchAll(/borderRadius:\s*(\d+(?:\.\d+)?)/g)) {
+        if (!allowed.has(Number(match[1]))) offenders.push(`${path.relative(repoRoot, file)}: ${match[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
