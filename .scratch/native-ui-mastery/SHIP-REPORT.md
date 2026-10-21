@@ -78,6 +78,7 @@ items) because the tested run-setup contract and the 900px floor both push back.
 | 2 | test | nvidia-r6 / stepfun-ai/step-5-preview | 8.0 | 5 |
 | 3 | visual | nvidia-r2 / stepfun-ai/step-5-preview | 6.5 | 5 |
 | 4 | code | nvidia-r3 / stepfun-ai/step-5-preview | 8.5 | 0 load-bearing, 4 cleanups |
+| 4 | test | nvidia-r6 / stepfun-ai/step-5-preview | 8.5 | 3 |
 | 2 | code | nvidia-r3 / stepfun-ai/step-5-preview | see below | see below |
 | 2 | visual | see below | see below | see below |
 
@@ -135,6 +136,15 @@ tooltip sits against its own button. One of its findings was wrong and is record
 it called sixteen style keys in the design studio dead, but that stylesheet is under the
 name `s` and the judge's search looked for `styles.`, so ten live references were missed
 and the keys stay.
+
+The test judge, in the same round, scored 8.5 and found that the start-run test was
+masked: the pending brief renders the same words as the run's own task block, so the
+assertion would have passed with no run on screen. The test now asks for what only a
+landed run shows. The judge also found that the file map in the apply and undo test threw
+away the arguments the real native module guards on, so a wrong project root or a lost
+"expected text" stayed green; the calls are recorded and checked now. And the judge said the
+five slop findings were tolerated rather than decided, which was fair: they are counted as
+accepted with their reasons now, and `node scripts/check-rn.mjs --strict` exits 0.
 
 ---
 
