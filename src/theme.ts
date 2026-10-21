@@ -33,6 +33,9 @@ export const colors = {
   text: '#F5F5F5',
   textQuiet: '#A3A3A3',
   textMuted: '#909599',
+  // One step down from the text colour, for the hover fill of a white button. The label on
+  // that button is the page colour, so the fill has to stay light.
+  textDim: '#D9DBDD',
 
   // The palette. The Dispatch mark is mint, so mint is the lead, and the roles below are
   // the ones the oxfords rules give a three colour palette.
@@ -47,6 +50,9 @@ export const colors = {
   attentionSurface: '#241C10',
   critical: '#F49090',
   criticalSurface: '#2A1618',
+
+  // The scrim behind a modal. The page is still there, it is just not the page any more.
+  scrim: '#0009',
 } as const;
 
 export const typography = {

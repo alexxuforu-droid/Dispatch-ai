@@ -23,7 +23,6 @@ export function RunRoom({ run, busy, onPause, onResume, onResults, onUpdate }: {
   if (!run) {
     return <View style={styles.page}>
       <EmptyState
-        icon={<Text style={styles.emptyGlyph}>◦</Text>}
         title="No active run"
         sentence="Start a run from Dispatch and its live room appears here: the plan, the handoffs and anything that needs you."
       />
@@ -272,7 +271,7 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
                     : change.rejectedAt ? <Chip label="Rejected" critical />
                       : change.supersededAt ? <Chip label="Superseded" critical />
                         : <Button label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : itemStatus === 'blocked' ? 'Waiting for its dependencies' : itemStatus === 'failed' ? 'This step failed' : 'Waiting for the review that comes next'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} variant={waitingOnYou ? 'inverse' : 'secondary'} />}
-                {canReject ? <Button label="Reject" onPress={() => onReject(activeRun, change.id)} variant="ghost" /> : null}
+                {canReject ? <Button label="Reject" onPress={() => onReject(activeRun, change.id)} variant="inverse" /> : null}
               </View>
             </View>;
           })}
@@ -323,7 +322,7 @@ const styles = StyleSheet.create({
 
   figureStrip: { flexDirection: 'row', gap: space.xxl, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: space.md },
   figure: { gap: 2 },
-  figureValue: { ...type.code, color: colors.text, fontSize: 18, lineHeight: 24 },
+  figureValue: { ...type.code, color: colors.text, fontSize: 16, lineHeight: 24 },
   figureLabel: { ...type.meta, color: colors.textMuted },
 
   itemRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, borderBottomWidth: 1, borderBottomColor: colors.line, paddingVertical: space.sm },
@@ -363,5 +362,5 @@ const styles = StyleSheet.create({
   decisionText: { ...type.bodySmall, color: colors.page, fontWeight: '600', marginRight: 'auto' },
 
   receiptMessage: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: space.sm, gap: 2 },
-  emptyGlyph: { color: colors.textMuted, fontSize: 20 },
+  
 });

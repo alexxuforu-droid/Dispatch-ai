@@ -54,9 +54,18 @@ for (const file of files) {
 
   // Slop floor: a raw hex value outside the token file. One palette, one place.
   if (!isTokenFile) {
-    for (const match of text.matchAll(/#[0-9A-Fa-f]{6}\b/g)) {
+    for (const match of text.matchAll(/#[0-9A-Fa-f]{3}(?![0-9A-Fa-f])|#[0-9A-Fa-f]{4}(?![0-9A-Fa-f])|#[0-9A-Fa-f]{6}(?![0-9A-Fa-f])|#[0-9A-Fa-f]{8}(?![0-9A-Fa-f])/g)) {
       fail(file, lineOf(text, match.index), 'raw-hex',
         'colour literal outside src/theme.ts; the palette lives in the token file');
+    }
+  }
+
+  // Slop floor: a colour written as a string. "colors.support" is a string, so the
+  // fill silently disappears and the state looks unselected.
+  if (!isTokenFile) {
+    for (const match of text.matchAll(/['"]colors\.[A-Za-z]+['"]/g)) {
+      fail(file, lineOf(text, match.index), 'quoted-colour',
+        'a colour token name in quotes is a string, not a colour');
     }
   }
 

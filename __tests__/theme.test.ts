@@ -68,6 +68,18 @@ describe('the palette', () => {
     expect(contrast(colors.critical, colors.criticalSurface)).toBeGreaterThanOrEqual(4.5);
   });
 
+  test('the pairs the interface actually uses clear their floors', () => {
+    // The white button and its label, the hover fill under that label, the toast title on
+    // the raised surface, the inverse button on the lead block, and the focus ring on a
+    // light fill and on the lead block. Each of these shipped once without a test.
+    expect(contrast(colors.page, colors.text)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.page, colors.textDim)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.text, colors.surfaceRaised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.leadInk, colors.lead)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.page, colors.pop)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.lead, colors.page)).toBeGreaterThanOrEqual(4.5);
+  });
+
   test('surfaces get lighter as they rise, with no shadows to do the work', () => {
     expect(luminance(colors.page)).toBeLessThan(luminance(colors.surface));
     expect(luminance(colors.surface)).toBeLessThan(luminance(colors.surfaceRaised));
@@ -129,7 +141,20 @@ describe('the token file is the only place a colour is written', () => {
     for (const file of files) {
       if (path.resolve(file) === path.join(repoRoot, 'src', 'theme.ts')) continue;
       const text = fs.readFileSync(file, 'utf8');
-      for (const match of text.matchAll(/#[0-9A-Fa-f]{6}\b/g)) {
+      for (const match of text.matchAll(/#[0-9A-Fa-f]{3}(?![0-9A-Fa-f])|#[0-9A-Fa-f]{4}(?![0-9A-Fa-f])|#[0-9A-Fa-f]{6}(?![0-9A-Fa-f])|#[0-9A-Fa-f]{8}(?![0-9A-Fa-f])/g)) {
+        offenders.push(`${path.relative(repoRoot, file)}: ${match[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('no source file writes a colour as a string', () => {
+    // "colors.support" is a string, so the fill disappears and the state looks unselected.
+    const offenders: string[] = [];
+    const files = [...sourceFiles(path.join(repoRoot, 'src')), path.join(repoRoot, 'App.tsx')];
+    for (const file of files) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const match of text.matchAll(/['"]colors\.[A-Za-z]+['"]/g)) {
         offenders.push(`${path.relative(repoRoot, file)}: ${match[0]}`);
       }
     }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { FocusPressable } from './Reveal';
 import { colors, radius, space, type } from './theme';
 
@@ -53,7 +53,7 @@ export function Button({
         styles.button,
         styles[`button_${variant}`],
         disabled && styles.buttonDisabled,
-        hovered && !disabled && styles.buttonHovered,
+        hovered && !disabled && styles[`buttonHovered_${variant}`],
         pressed && !disabled && styles.pressed,
         style,
       ]}
@@ -317,9 +317,9 @@ export function Toast({
       </View>
       {action}
       {onDismiss ? (
-        <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDismiss} style={styles.toastDismiss}>
+        <FocusPressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDismiss} style={styles.toastDismiss}>
           <Text style={styles.toastDismissLabel}>Dismiss</Text>
-        </Pressable>
+        </FocusPressable>
       ) : null}
     </View>
   );
@@ -350,7 +350,11 @@ const styles = StyleSheet.create({
   // For a button that sits on the lead block, where a white button would not be legible.
   button_inverse: { backgroundColor: colors.page, borderColor: colors.page },
   buttonDisabled: { backgroundColor: colors.surface, borderColor: colors.line },
-  buttonHovered: { backgroundColor: colors.surfaceActive, borderColor: colors.textMuted },
+  buttonHovered_primary: { backgroundColor: colors.textDim },
+  buttonHovered_secondary: { backgroundColor: colors.surfaceActive, borderColor: colors.textMuted },
+  buttonHovered_ghost: { backgroundColor: colors.surfaceActive },
+  buttonHovered_critical: { backgroundColor: colors.criticalSurface, borderColor: colors.critical },
+  buttonHovered_inverse: { backgroundColor: colors.surfaceActive },
   buttonLabel: { ...type.label },
   buttonLabel_primary: { color: colors.page },
   buttonLabel_secondary: { color: colors.text },
@@ -468,7 +472,7 @@ const styles = StyleSheet.create({
   toastAttention: { backgroundColor: colors.attentionSurface, borderColor: colors.attentionSurface },
   toastCritical: { backgroundColor: colors.criticalSurface, borderColor: colors.criticalSurface },
   toastText: { flex: 1 },
-  toastTitle: { ...type.body, fontWeight: '600' },
+  toastTitle: { ...type.body, fontWeight: '600', color: colors.text },
   toastTitleAttention: { color: colors.attention },
   toastTitleCritical: { color: colors.critical },
   toastBody: { ...type.meta, color: colors.textQuiet, marginTop: 2 },

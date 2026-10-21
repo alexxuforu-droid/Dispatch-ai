@@ -1061,8 +1061,10 @@ function resultsChange(overrides: Partial<CodeChange> = {}): CodeChange {
   };
 }
 
-async function mountResultsStudio(props: Partial<ResultsStudioProps>): Promise<{ tree: ReactTestRenderer; onApply: jest.Mock }> {
+async function mountResultsStudio(props: Partial<ResultsStudioProps>): Promise<{ tree: ReactTestRenderer; onApply: jest.Mock; onUndo: jest.Mock; onOpenRun: jest.Mock }> {
   const onApply = jest.fn();
+  const onUndo = jest.fn();
+  const onOpenRun = jest.fn();
   const tree = await mount(React.createElement(ResultsStudio as React.ComponentType<ResultsStudioProps>, {
     run: null,
     history: [],
@@ -1070,11 +1072,11 @@ async function mountResultsStudio(props: Partial<ResultsStudioProps>): Promise<{
     onReject: jest.fn(),
     onAcceptArtifact: jest.fn(),
     onSaveRecipe: jest.fn(),
-    onUndo: jest.fn(),
-    onOpenRun: jest.fn(),
+    onUndo,
+    onOpenRun,
     ...props,
   }));
-  return { tree, onApply };
+  return { tree, onApply, onUndo, onOpenRun };
 }
 
 // The apply control carries its own words, and which words it carries is the whole contract:
@@ -1225,5 +1227,107 @@ test('a cancelled work item gets a disabled action labelled with its own fate, n
   const cancelledAction = pressableNodes(tree.toJSON()).find(control => /cancel/i.test(subtreeText(control)));
   if (!cancelledAction) throw new Error('no action is labelled as cancelled');
   expect(actionDisabled(cancelledAction)).toBe(true);
+  await unmount(tree);
+});
+
+// ---- The three controls that decide whether the app works --------------------------------
+
+function textInputIn(tree: ReactTestRenderer): TreeNode | null {
+  const find = (node: TreeRoot): TreeNode | null => {
+    if (!node || typeof node === 'string') return null;
+    if (Array.isArray(node)) {
+      for (const kid of node) {
+        const hit = find(kid);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    if (node.type === 'TextInput') return node;
+    return find((node.children ?? null) as TreeRoot);
+  };
+  return find(tree.toJSON());
+}
+
+test('pressing Start run plans the task and puts the run on screen', async () => {
+  const { defaultProviderProfile, saveProviderProfile } = require('../src/persistence/providerProfile');
+  const credentials = require('../src/persistence/providerCredentials');
+  const { defaultWorkspaceSettings, saveWorkspaceSettings } = require('../src/persistence/workspace');
+  const runner = require('../src/orchestration/model-runner') as typeof import('../src/orchestration/model-runner');
+
+  // The state the app is in when it is allowed to work: a team to plan with, a model, and a
+  // stored key. Without them the start button refuses, which is a different test.
+  await saveWorkspaceSettings({
+    ...defaultWorkspaceSettings,
+    teamRoleIds: ['planner', 'builder'],
+    teams: [{ id: 'team-default', name: 'Core team', description: 'The agents that do the work.', agentIds: ['planner', 'builder'] }],
+    activeTeamId: 'team-default',
+  });
+  await saveProviderProfile({ ...defaultProviderProfile, model: 'test-model' });
+  const secret = jest.spyOn(credentials, 'hasProviderSecret').mockResolvedValue(true);
+
+  const brief = 'Tighten the release notes screen.';
+  const stamp = '2026-01-01T00:00:00.000Z';
+  const planned: Run = {
+    id: 'run-planned',
+    brief,
+    teamId: 'team-default',
+    status: 'queued',
+    items: [],
+    messages: [],
+    artifacts: [],
+    changes: [],
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+  const plan = jest.spyOn(runner, 'createPlannedRun');
+  plan.mockImplementation(async (options) => {
+    options.onPlanned?.(planned);
+    return planned;
+  });
+
+  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+
+  const composer = textInputIn(tree);
+  if (!composer) throw new Error('the composer renders no text input');
+  await act(async () => { (composer.props.onChangeText as (text: string) => void)(brief); });
+
+  await press(tree, 'Start coordinated run');
+
+  // The plan was asked for with the brief that was typed, and the run it returned is on
+  // screen. Both halves matter: a start that plans nothing is a silent no-op.
+  expect(plan).toHaveBeenCalledTimes(1);
+  expect(plan.mock.calls[0][0].brief).toBe(brief);
+  expect(textNodes(tree.toJSON()).join(' \n ')).toContain(brief);
+
+  secret.mockRestore();
+  plan.mockRestore();
+  await unmount(tree);
+});
+
+test('pressing Undo applied change asks the app to undo that change', async () => {
+  const run = resultsRun('done', resultsChange({ appliedAt: '2026-01-01T00:00:00.000Z' }));
+  const { tree, onUndo } = await mountResultsStudio({ run, projectRoot: 'Z:\\fixture-project' });
+
+  const undo = pressableNodes(tree.toJSON()).find(control => /undo applied change/i.test(subtreeText(control)));
+  if (!undo) throw new Error('no undo control is rendered for the applied change');
+  await pressControl(undo);
+
+  // Undo is the destructive-adjacent path: a broken undo loses work, so the handler has to
+  // be handed the run and the change it belongs to.
+  expect(onUndo).toHaveBeenCalledWith(run, 'change-greeting');
+  await unmount(tree);
+});
+
+test('pressing a run in the history opens that run', async () => {
+  const run = resultsRun('done', resultsChange());
+  // The history lists the other runs, so the run on screen is not the one in the list.
+  const earlier: Run = { ...run, id: 'run-earlier', brief: 'An earlier run.' };
+  const { tree, onOpenRun } = await mountResultsStudio({ run, history: [run, earlier] });
+
+  const open = pressableNodes(tree.toJSON()).find(control => /^open\b/i.test(String(control.props.accessibilityLabel ?? '')));
+  if (!open) throw new Error('no run in the history carries an open action');
+  await pressControl(open);
+
+  expect(onOpenRun).toHaveBeenCalledWith(earlier);
   await unmount(tree);
 });

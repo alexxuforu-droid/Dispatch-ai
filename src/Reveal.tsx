@@ -68,6 +68,9 @@ export function useFocusRing() {
  * The colour is picked from the control's own fill, so a filled accent button (a mint
  * background) gets a lighter mint and a dark surface gets the raised tone.
  */
+/** The light fills in the app. A focus ring has to be dark on these. */
+const LIGHT_FILLS = [colors.text, colors.textDim, colors.pop].map(value => value.toLowerCase());
+
 export function FocusPressable({ children, style, onFocus, onBlur, focusIndicator = true, ...rest }: React.ComponentProps<typeof Pressable> & { focusIndicator?: boolean }) {
   const { focusProps, focused } = useFocusRing();
   return <Pressable
@@ -81,8 +84,12 @@ export function FocusPressable({ children, style, onFocus, onBlur, focusIndicato
       const entries = flat.filter((entry): entry is Record<string, unknown> => Boolean(entry));
       const background = entries.map(entry => entry.backgroundColor).find(value => typeof value === 'string') as string | undefined;
       const onAccent = background?.toLowerCase() === colors.lead.toLowerCase();
+      const onLight = background ? LIGHT_FILLS.includes(background.toLowerCase()) : false;
       const hasBorder = entries.some(entry => typeof entry.borderWidth === 'number' && entry.borderWidth > 0);
-      if (hasBorder) return [resolved, { borderColor: onAccent ? colors.leadInk : colors.lead }];
+      // The ring follows the fill it sits on: the lead colour on a dark surface, the page
+      // colour on a light one, and the ink on the lead block.
+      const ring = onAccent ? colors.leadInk : onLight ? colors.page : colors.lead;
+      if (hasBorder) return [resolved, { borderColor: ring }];
       // An absolutely positioned layer is a surface, not a control: painting it would cover
       // what is underneath, which is the opposite of helping the person see where they are.
       if (entries.some(entry => entry.position === 'absolute')) return resolved;
