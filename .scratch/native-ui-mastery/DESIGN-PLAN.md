@@ -16,6 +16,59 @@ Status: proposed, not started. Evidence is real screenshots of the running app.
 
 ---
 
+## 0.1 Amendment log (after debate round 1)
+
+Three NIM agents argued the plan: one for, one against, one as the owner's advocate. The
+changes below are what survived. Each one names the evidence that forced it.
+
+| Plan said | Now | Why |
+|---|---|---|
+| sidebar 240px, labelled down to the 900 floor | sidebar stays 228px, compact stays 68px, groups added, labels at 1040 and up | The floor leaves 672px of content; a 240px rail starves it. The existing width is fine, the labelling is the fix. |
+| thirteen destinations become five | six top level: Dispatch, Runs, Results, Teams, Studio, Settings, with the rest as tabs inside the page that owns them | Both debaters agreed on grouping and disagreed only on how far to collapse. The grouping keeps every destination one click away. |
+| run setup becomes a modal everywhere | the inline inspector stays at 1040 and up, the modal stays below it | `__tests__/snapshot.tree.test.tsx` pins the inline inspector at the floor with a stated reason. The container is a tested contract; the content inside it is what gets redesigned. |
+| the composer is the mint lead block | decided by screenshot, not by argument | One debater called a mint composer the highest cost and lowest evidence part of the plan; the other wanted colour on content. Both screenshots get built and the squint test decides. |
+| type scale 12 to 28 | 11 to 28, and every 10px literal in the app raised to 11 | The floor is 11 because Windows text scaling runs to 2.25x. 146 declarations sat below it. |
+| the primary button is white | white fill with near-black ink, declared as a pair | A white button without its own ink is a grey button on a grey page. |
+| lead colour used on one block per screen | lead is the focus ring, the active indicator, and one content block per screen | "Lead on every screen" is the rule that produced twenty-one mint buttons. The usage set is now closed and the checker enforces it. |
+
+Two defects the debate found in the plan's own inventory, now corrected: the app had 146
+ten-pixel declarations, not 134, and the checker reported 267 failures, not 290. Both
+numbers are measured, not estimated.
+
+### 0.2 Deviations from this plan, and why
+
+| Plan said | Shipped | Reason |
+|---|---|---|
+| install react-native-svg and render the logo and icons as vectors at runtime | the icons are rasterised from their SVG source at build time and tinted by tone | React Native Windows cannot autolink the library here: the Windows autolink needs PowerShell 7, which this machine does not have, and the shipped project is UWP flavoured, which is the known failure mode with React Native Windows 0.79 and later. The visible result is the same: real vector shapes, one family, one weight. The brand mark stays a raster of the same SVG source, now rendered on the page colour. |
+| the composer is the mint lead block | decided by screenshot, in the Dispatch phase | One debater called it the highest cost and lowest evidence part of the plan. Both readings get built and the squint test picks. |
+| the run setup becomes a modal | the panel stays at 1040 and up, the modal below it | The test contract pins it, with a stated reason: the window floor shows the panel. The panel's content is redesigned; its container is not. |
+| a labelled sidebar down to the 900 floor | the rail keeps its 228 and 68 widths, gains groups and a full row fill | At the floor a wider rail starves the page, and the change the owner can see is the grouping and the labels, not the width. |
+| the results surface uses tabs | one page, with sections | A tab would hide the decision behind a click, which is the one thing the screen exists for. |
+
+---
+
+## 0.3 Sign off checklist
+
+Written for the owner, checkable from a screenshot or one click:
+
+1. On Dispatch at full window size, the first thing your eye lands on is the box where you
+   type the task.
+2. Count the green on Dispatch: one block, the task box, and nothing else.
+3. Every button looks like one of three friends: white, dark grey, or outline. "Start run" is
+   the white one.
+4. The task box, the preset cards and the starter prompts all begin at the same left edge.
+5. The strip that sat on top of the task box is gone; messages appear bottom right.
+6. The sidebar shows grouped items, the mark at the top, and no little dots.
+7. The mark stays sharp at any window size.
+8. Every icon comes from the same set: same thickness, same corners.
+9. On Settings the endpoint and model boxes sit side by side, and "Save and test" is not
+   green.
+10. Every screen with nothing in it says one sentence and gives exactly one button.
+11. Give it one real run: the single green block on Results is the approve decision.
+12. Narrow the window to its floor and back: nothing runs off the right edge.
+
+---
+
 ## 0. Evidence
 
 Screens captured from the running app at 1500x1000 with
