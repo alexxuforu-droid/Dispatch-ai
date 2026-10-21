@@ -25,14 +25,14 @@ $wide = @(
 )
 
 $compact = @(
-  @('dispatch', 40, 203),
+  @('dispatch', 40, 207),
   @('design', 40, 257),
   @('room', 40, 305),
   @('results', 40, 355),
   @('board', 40, 400),
-  @('teams', 40, 450),
-  @('agents', 40, 500),
-  @('settings', 40, 900)
+  @('teams', 40, 492),
+  @('agents', 40, 533),
+  @('settings', 40, 656)
 )
 
 $screens = if ($Mode -eq 'compact') { $compact } else { $wide }
