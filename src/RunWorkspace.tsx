@@ -151,6 +151,15 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
   }
 
   const otherRuns = history.filter(item => item.id !== activeRun.id).slice(0, 6);
+  const stateLabel: Record<Run['status'], string> = {
+    queued: 'Plan ready',
+    running: 'In progress',
+    reviewing: 'Reviewing',
+    completed: 'Complete',
+    failed: 'Stopped',
+    cancelled: 'Cancelled',
+    'needs-approval': 'Needs your review',
+  };
 
   return <View style={styles.reviewLayout}>
     {otherRuns.length ? <View style={styles.runList}>
@@ -172,7 +181,7 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
       <Text style={styles.dim}>{activeRun.brief}</Text>
       {notice ? <View style={styles.statusNotice} accessibilityRole="alert"><Text style={styles.statusNoticeText}>{notice}</Text>{onDismissNotice ? <Button label="Dismiss notice" onPress={onDismissNotice} variant="ghost" /> : null}</View> : null}
       <View style={styles.figureStrip}>
-        <Figure value={activeRun.status} label="state" />
+        <Figure value={stateLabel[activeRun.status]} label="state" />
         <Figure value={String(activeRun.items.length)} label="assignments" />
         <Figure value={String(activeRun.messages.length)} label="messages" />
       </View>
