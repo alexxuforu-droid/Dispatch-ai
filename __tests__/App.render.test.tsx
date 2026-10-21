@@ -1230,6 +1230,55 @@ test('a cancelled work item gets a disabled action labelled with its own fate, n
   await unmount(tree);
 });
 
+// The primary control's gate. A control that looks available but refuses when pressed is
+// worse than one that says it is not available, so both states are held.
+test('the start control is disabled until there is a task to run', async () => {
+  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+
+  const empty = findByLabel(tree.toJSON(), 'Start coordinated run');
+  if (!empty) throw new Error('the composer renders no start control');
+  expect((empty.props.accessibilityState as { disabled?: boolean } | undefined)?.disabled).toBe(true);
+
+  const composer = textInputIn(tree);
+  if (!composer) throw new Error('the composer renders no text input');
+  await act(async () => { (composer.props.onChangeText as (text: string) => void)('Tighten the release notes screen.'); });
+
+  const ready = findByLabel(tree.toJSON(), 'Start coordinated run');
+  if (!ready) throw new Error('the composer renders no start control');
+  expect((ready.props.accessibilityState as { disabled?: boolean } | undefined)?.disabled).toBe(false);
+
+  await unmount(tree);
+});
+
+// The run history is a collection of runs, and opening one has to leave the collection and
+// show the run. The control disappearing is the evidence that the app moved.
+test('opening a run from the history leaves the collection and shows the run', async () => {
+  const { saveRunSnapshot } = require('../src/persistence/runStore') as typeof import('../src/persistence/runStore');
+  const at = '2026-01-01T00:00:00.000Z';
+  await saveRunSnapshot({
+    id: 'run-history',
+    brief: 'Greet the world properly.',
+    teamId: 'team-default',
+    status: 'completed',
+    items: [],
+    messages: [],
+    artifacts: [],
+    changes: [],
+    createdAt: at,
+    updatedAt: at,
+  });
+
+  const tree = await mount(React.createElement(App, { initialScreen: 'runs' }));
+  if (!findPressableByText(tree.toJSON(), 'Open run in Dispatch')) throw new Error('the run in the history carries no open action');
+
+  await pressByText(tree, 'Open run in Dispatch');
+
+  // The collection is behind us, and the run it opened is on screen.
+  expect(findPressableByText(tree.toJSON(), 'Open run in Dispatch')).toBeNull();
+  expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Greet the world properly.');
+  await unmount(tree);
+});
+
 // ---- The three controls that decide whether the app works --------------------------------
 
 function textInputIn(tree: ReactTestRenderer): TreeNode | null {
