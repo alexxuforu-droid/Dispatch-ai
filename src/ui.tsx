@@ -17,7 +17,7 @@ import { colors, radius, space, type } from './theme';
  * - Nothing below 11px, and the type scale is the only source of sizes.
  */
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'critical';
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'critical' | 'inverse';
 
 export function Button({
   label,
@@ -340,12 +340,15 @@ const styles = StyleSheet.create({
   button_secondary: { backgroundColor: colors.surfaceRaised, borderColor: colors.line },
   button_ghost: { backgroundColor: 'transparent', borderColor: 'transparent' },
   button_critical: { backgroundColor: colors.criticalSurface, borderColor: colors.criticalSurface },
+  // For a button that sits on the lead block, where a white button would not be legible.
+  button_inverse: { backgroundColor: colors.page, borderColor: colors.page },
   buttonDisabled: { backgroundColor: colors.surface, borderColor: colors.line },
   buttonLabel: { ...type.label },
   buttonLabel_primary: { color: colors.page },
   buttonLabel_secondary: { color: colors.text },
   buttonLabel_ghost: { color: colors.textQuiet },
   buttonLabel_critical: { color: colors.critical },
+  buttonLabel_inverse: { color: colors.lead },
   buttonLabelDisabled: { color: colors.textMuted },
   pressed: { opacity: 0.82 },
 

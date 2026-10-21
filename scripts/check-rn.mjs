@@ -78,10 +78,19 @@ for (const file of files) {
     }
   }
 
-  // Slop floor: the lead colour belongs on content, not on controls.
-  for (const match of text.matchAll(/backgroundColor:\s*colors\.(?:accent|lead)\b/g)) {
-    fail(file, lineOf(text, match.index), 'accent-fill',
-      'lead colour fills a control; chrome and controls stay neutral');
+  // Slop floor: the lead colour belongs on content, not on controls. A control is a small
+  // filled thing (a button, a chip, a pill); a block is a surface that carries content.
+  for (const match of text.matchAll(/(?:^|[,{])\s*(\w+):\s*\{[^}]*backgroundColor:\s*colors\.(?:accent|lead)\b[^}]*\}/g)) {
+    const block = match[0];
+    const size = /(?:minHeight|height):\s*(\d+)/.exec(block);
+    const isControl = size ? Number(size[1]) <= 48 : false;
+    if (isControl) {
+      fail(file, lineOf(text, match.index), 'accent-fill',
+        'lead colour fills a control; chrome and controls stay neutral');
+    } else {
+      warn(file, lineOf(text, match.index), 'lead-block',
+        'lead colour fills a block; one such block per screen, and only on content');
+    }
   }
   for (const match of text.matchAll(/backgroundColor:\s*colors\.(?:accentSubtle|support)\b/g)) {
     warn(file, lineOf(text, match.index), 'tinted-pill',
