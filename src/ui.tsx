@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { FocusPressable } from './Reveal';
+import { DispatchIcon } from './DispatchIcon';
 import { colors, radius, space, type } from './theme';
 
 /**
@@ -104,6 +105,7 @@ export function Field({
   secure,
   autoCapitalize = 'none',
   multiline,
+  accessibilityLabel,
   style,
   testID,
 }: {
@@ -116,6 +118,7 @@ export function Field({
   secure?: boolean;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   multiline?: boolean;
+  accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }) {
@@ -124,7 +127,7 @@ export function Field({
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         testID={testID}
-        accessibilityLabel={label}
+        accessibilityLabel={accessibilityLabel ?? label}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -317,9 +320,7 @@ export function Toast({
       </View>
       {action}
       {onDismiss ? (
-        <FocusPressable accessibilityRole="button" accessibilityLabel="Dismiss" onPress={onDismiss} style={styles.toastDismiss}>
-          <Text style={styles.toastDismissLabel}>Dismiss</Text>
-        </FocusPressable>
+        <IconButton icon={<DispatchIcon name="close" size={14} color={colors.textQuiet} />} accessibilityLabel="Dismiss notice" onPress={onDismiss} style={styles.toastDismiss} />
       ) : null}
     </View>
   );
