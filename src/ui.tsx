@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { FocusPressable } from './Reveal';
 import { colors, radius, space, type } from './theme';
@@ -38,6 +38,7 @@ export function Button({
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <FocusPressable
       testID={testID}
@@ -46,10 +47,13 @@ export function Button({
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       style={({ pressed }) => [
         styles.button,
         styles[`button_${variant}`],
         disabled && styles.buttonDisabled,
+        hovered && !disabled && styles.buttonHovered,
         pressed && !disabled && styles.pressed,
         style,
       ]}
@@ -73,6 +77,7 @@ export function IconButton({
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <FocusPressable
       accessibilityRole="button"
@@ -80,7 +85,9 @@ export function IconButton({
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.iconButton, disabled && styles.buttonDisabled, pressed && !disabled && styles.pressed, style]}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={({ pressed }) => [styles.iconButton, hovered && !disabled && styles.iconButtonHovered, disabled && styles.buttonDisabled, pressed && !disabled && styles.pressed, style]}
     >
       {icon}
     </FocusPressable>
@@ -343,6 +350,7 @@ const styles = StyleSheet.create({
   // For a button that sits on the lead block, where a white button would not be legible.
   button_inverse: { backgroundColor: colors.page, borderColor: colors.page },
   buttonDisabled: { backgroundColor: colors.surface, borderColor: colors.line },
+  buttonHovered: { backgroundColor: colors.surfaceActive, borderColor: colors.textMuted },
   buttonLabel: { ...type.label },
   buttonLabel_primary: { color: colors.page },
   buttonLabel_secondary: { color: colors.text },
@@ -361,6 +369,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
+  iconButtonHovered: { backgroundColor: colors.surfaceActive, borderColor: colors.line },
 
   field: { gap: space.xs },
   fieldLabel: { ...type.label, color: colors.textQuiet },
