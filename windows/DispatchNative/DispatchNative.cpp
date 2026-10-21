@@ -32,6 +32,26 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   GetModuleFileNameW(NULL, appDirectory, MAX_PATH);
   PathCchRemoveFileSpec(appDirectory, MAX_PATH);
 
+  // The AsyncStorage native module keeps its SQLite file in the app's package location by
+  // default. An unpackaged desktop app has no package identity, so every storage call fails
+  // with "The process has no package identity" and the app cannot read or write anything it
+  // saved. Point the module at a file the app owns instead.
+  try {
+    PWSTR localAppData = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &localAppData))) {
+      std::wstring folder(localAppData);
+      CoTaskMemFree(localAppData);
+      const std::wstring databaseFolder = folder + L"\\Dispatch AI";
+      CreateDirectoryW(databaseFolder.c_str(), nullptr);
+      winrt::Windows::ApplicationModel::Core::CoreApplication::Properties().Insert(
+          L"React-Native-Community-Async-Storage-Database-Path",
+          winrt::box_value(databaseFolder + L"\\AsyncStorage.db"));
+    }
+  } catch (const winrt::hresult_error &) {
+    // Without the property the storage module reports the problem itself, and the app
+    // surfaces that in its notice channel.
+  }
+
   // Create a ReactNativeWin32App with the ReactNativeAppBuilder
   auto reactNativeWin32App{winrt::Microsoft::ReactNative::ReactNativeAppBuilder().Build()};
 

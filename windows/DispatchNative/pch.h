@@ -15,6 +15,7 @@
 #include <windows.h>
 #undef GetCurrentTime
 #include <pathcch.h>
+#include <shlobj.h>
 #include <unknwn.h>
 
 // WinRT Header Files
@@ -28,6 +29,8 @@
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Windowing.h>
 #include <winrt/Microsoft.UI.interop.h>
+#include <winrt/Windows.ApplicationModel.Core.h>
+#include <winrt/Windows.Storage.h>
 
 // C RunTime Header Files
 #include <malloc.h>
