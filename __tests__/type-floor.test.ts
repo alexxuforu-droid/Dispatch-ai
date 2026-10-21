@@ -19,7 +19,7 @@ const path = require('path');
 
 export {};
 const ROOTS = [path.join(__dirname, '..', 'App.tsx'), path.join(__dirname, '..', 'src')];
-const MIN_FONT_SIZE = 10;
+const MIN_FONT_SIZE = 11;
 
 function sourceFiles(target: string): string[] {
   const stat = fs.statSync(target);

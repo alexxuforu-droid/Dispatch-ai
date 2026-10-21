@@ -79,13 +79,18 @@ for (const file of files) {
   }
 
   // Slop floor: the lead colour belongs on content, not on controls.
-  for (const match of text.matchAll(/backgroundColor:\s*colors\.accent\b/g)) {
+  for (const match of text.matchAll(/backgroundColor:\s*colors\.(?:accent|lead)\b/g)) {
     fail(file, lineOf(text, match.index), 'accent-fill',
       'lead colour fills a control; chrome and controls stay neutral');
   }
-  for (const match of text.matchAll(/backgroundColor:\s*colors\.accentSubtle\b/g)) {
+  for (const match of text.matchAll(/backgroundColor:\s*colors\.(?:accentSubtle|support)\b/g)) {
     warn(file, lineOf(text, match.index), 'tinted-pill',
       'tinted surface on a small element; a chip is quiet unless the state needs attention');
+  }
+  // Slop floor: a bright lead colour is a fill or a large figure, never small text.
+  for (const match of text.matchAll(/color:\s*colors\.(?:accent|lead)\b/g)) {
+    warn(file, lineOf(text, match.index), 'lead-text',
+      'lead colour used as text; the lead is a fill or a large figure');
   }
 
   // Slop floor: an uppercase, letter-spaced label above a heading.

@@ -91,7 +91,7 @@ export function RunRoom({ run, busy, onPause, onResume, onResults, onUpdate }: {
         onChangeText={setDirection}
         onSubmitEditing={() => { void sendDirection(); }}
         placeholder="Add direction or answer a blocker…"
-        placeholderTextColor={colors.muted}
+        placeholderTextColor={colors.textMuted}
         multiline
         maxLength={2000}
         style={styles.input}
@@ -249,38 +249,38 @@ function ActionButton({ label, accessibilityLabel, onPress, disabled = false, ac
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.canvas },
+  page: { flex: 1, backgroundColor: colors.page },
   content: { padding: 24, gap: 14 },
-  kicker: { color: colors.accent, fontFamily: typography.body, fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
-  title: { color: colors.ink, fontFamily: typography.display, fontSize: 29, fontWeight: '700' },
-  dim: { ...type.body, color: colors.muted },
+  kicker: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
+  title: { color: colors.text, fontFamily: typography.display, fontSize: 29, fontWeight: '700' },
+  dim: { ...type.body, color: colors.textMuted },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  button: { backgroundColor: '#293B36', borderColor: '#40534C', borderWidth: 1, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 13 },
-  buttonActive: { backgroundColor: '#1C302D', borderColor: colors.accent },
+  button: { backgroundColor: colors.support, borderColor: colors.line, borderWidth: 1, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 13 },
+  buttonActive: { backgroundColor: colors.support, borderColor: colors.lead },
   buttonDisabled: { opacity: 0.48 },
   buttonPressed: { opacity: 0.78 },
-  buttonText: { color: colors.ink, fontFamily: typography.body, fontSize: 12, fontWeight: '600' },
-  metric: { color: colors.accent, fontFamily: typography.body, fontSize: 12, fontWeight: '700' },
-  section: { marginTop: 12, color: colors.ink, fontFamily: typography.display, fontSize: 18, fontWeight: '700' },
-  card: { padding: 14, gap: 8, backgroundColor: colors.panel, borderWidth: 1, borderColor: colors.border, borderRadius: 10 },
+  buttonText: { color: colors.text, fontFamily: typography.body, fontSize: 12, fontWeight: '600' },
+  metric: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 12, fontWeight: '700' },
+  section: { marginTop: 12, color: colors.text, fontFamily: typography.display, fontSize: 18, fontWeight: '700' },
+  card: { padding: 14, gap: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: 10 },
   // The same neutral channel the Dispatch screen uses, because this notice carries successes
   // as well as failures: a successful apply dressed as an error reads as a failure.
-  statusNotice: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: '#24231F', borderWidth: 1, borderColor: '#554932', borderRadius: 8 },
-  statusNoticeText: { flex: 1, color: '#E9CEA2', fontFamily: typography.body, fontSize: 12, lineHeight: 18 },
-  name: { ...type.body, color: colors.ink, fontWeight: '700' },
-  body: { ...type.body, color: colors.secondary },
-  badge: { color: colors.accent, fontFamily: typography.body, fontSize: 10, fontWeight: '700' },
-  activityText: { color: colors.secondary, fontFamily: typography.body, fontSize: 12, lineHeight: 18, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 },
-  input: { minWidth: 280, flex: 1, minHeight: 48, padding: 12, color: colors.ink, backgroundColor: colors.panel, borderColor: colors.border, borderWidth: 1, borderRadius: 8 },
+  statusNotice: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: colors.attentionSurface, borderWidth: 1, borderColor: colors.line, borderRadius: 8 },
+  statusNoticeText: { flex: 1, color: colors.attention, fontFamily: typography.body, fontSize: 12, lineHeight: 18 },
+  name: { ...type.body, color: colors.text, fontWeight: '700' },
+  body: { ...type.body, color: colors.textQuiet },
+  badge: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '700' },
+  activityText: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 12, lineHeight: 18, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 8 },
+  input: { minWidth: 280, flex: 1, minHeight: 48, padding: 12, color: colors.text, backgroundColor: colors.surface, borderColor: colors.line, borderWidth: 1, borderRadius: 8 },
   imageComparison: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  preview: { width: 280, height: 240, resizeMode: 'contain', backgroundColor: colors.panel, borderRadius: 8 },
-  diffLabel: { ...type.caption, color: colors.accent, fontWeight: '700', letterSpacing: .6, marginTop: 5 },
+  preview: { width: 280, height: 240, resizeMode: 'contain', backgroundColor: colors.surface, borderRadius: 8 },
+  diffLabel: { ...type.meta, color: colors.textQuiet, fontWeight: '700', letterSpacing: .6, marginTop: 5 },
   diffRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  lineNumber: { ...type.code, width: 32, color: colors.muted, marginRight: 8, marginTop: 5 },
-  diffAdded: { color: colors.accent },
-  diffRemoved: { color: colors.danger },
-  code: { ...type.code, color: colors.ink, maxWidth: 850, marginTop: 5 },
-  receiptMessage: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8, gap: 4 },
+  lineNumber: { ...type.code, width: 32, color: colors.textMuted, marginRight: 8, marginTop: 5 },
+  diffAdded: { color: colors.textQuiet },
+  diffRemoved: { color: colors.critical },
+  code: { ...type.code, color: colors.text, maxWidth: 850, marginTop: 5 },
+  receiptMessage: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 8, gap: 4 },
 });

@@ -80,13 +80,13 @@ export function FocusPressable({ children, style, onFocus, onBlur, focusIndicato
       const flat = (Array.isArray(resolved) ? resolved : [resolved]).filter(Boolean) as (Record<string, unknown> | undefined)[];
       const entries = flat.filter((entry): entry is Record<string, unknown> => Boolean(entry));
       const background = entries.map(entry => entry.backgroundColor).find(value => typeof value === 'string') as string | undefined;
-      const onAccent = background?.toLowerCase() === colors.accent.toLowerCase();
+      const onAccent = background?.toLowerCase() === colors.lead.toLowerCase();
       const hasBorder = entries.some(entry => typeof entry.borderWidth === 'number' && entry.borderWidth > 0);
-      if (hasBorder) return [resolved, { borderColor: onAccent ? colors.accentInk : colors.accent }];
+      if (hasBorder) return [resolved, { borderColor: onAccent ? colors.leadInk : colors.lead }];
       // An absolutely positioned layer is a surface, not a control: painting it would cover
       // what is underneath, which is the opposite of helping the person see where they are.
       if (entries.some(entry => entry.position === 'absolute')) return resolved;
-      return [resolved, { backgroundColor: onAccent ? colors.accentFocus : colors.raisedHover }];
+      return [resolved, { backgroundColor: onAccent ? colors.pop : colors.surfaceActive }];
     }}
   >{children}</Pressable>;
 }
