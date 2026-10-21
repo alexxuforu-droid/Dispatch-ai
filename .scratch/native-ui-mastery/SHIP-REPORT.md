@@ -76,6 +76,7 @@ items) because the tested run-setup contract and the 900px floor both push back.
 | 1 | visual | nvidia, nvidia-r2, nvidia-r5 | not scored | the slot returned an internal error four times on the screenshot brief |
 | 2 | code | nvidia-r3 / stepfun-ai/step-5-preview | 7.5 | 1 load-bearing, 6 cleanups |
 | 2 | test | nvidia-r6 / stepfun-ai/step-5-preview | 8.0 | 5 |
+| 3 | visual | nvidia-r2 / stepfun-ai/step-5-preview | 6.5 | 5 |
 | 2 | code | nvidia-r3 / stepfun-ai/step-5-preview | see below | see below |
 | 2 | visual | see below | see below | see below |
 
@@ -111,6 +112,20 @@ cannot be proven from jest, because AsyncStorage is an in-memory map there and t
 module is absent. That is true and is reported as such: the persistence claim is proven by
 the running app on this machine, not by the test suite.
 
+**What round 3 changed.** The visual judge read the screenshots one at a time and named
+five load-bearing faults: the decision row had no primary action in it, the task board's
+counters did not match the cards under them, the provider state was the quietest text on
+screen, one screen carried two buttons for the same action, and two pages opened with a
+slogan where the title belongs. All five are fixed: the apply control is the primary
+control of the decision row, "Resume run" is the primary of the run room, the board counts
+the cancelled work, and the page titles moved into the top bar at their own size with the
+slogan headings and the uppercase labels gone.
+
+One of the visual judge's findings was wrong and is recorded as such: it read the "New run"
+button in the sidebar as a mint fill. The style is `backgroundColor: colors.text`, the
+white primary, and it has been for the whole build; the capture shows a white button. The
+judge's other colour readings were checked against the token file before acting on them.
+
 ---
 
 ## The commits
@@ -128,6 +143,26 @@ was committed to the parent repository.
 | `7136c70` | The page headings say what the page holds. |
 | `bd329e1` | The page shrinks so the run setup panel stays on screen at 1240 and 900. |
 | `7a11773` | The code judge's second round: the focus ring on a control that is also selected, the word on the icon button, the scale held in the screens' styles, and the forty-eight radii that were not on it. |
+
+---
+
+## The models
+
+Every agent on this work ran on NVIDIA NIM through the rotating local slots, on
+`stepfun-ai/step-5-preview`:
+
+| Slot | What it did |
+|---|---|
+| nvidia-r2 | debate round 1, the visual judge in round 3 |
+| nvidia-r3 | debate round 1, the code judge in rounds 1 and 2 |
+| nvidia-r4 | debate round 1, the code judge in round 3 |
+| nvidia-r5 | the visual judge in round 2 (the slot returned an internal error) |
+| nvidia-r6 | the test judge in rounds 2 and 3 |
+
+One deviation, sanctioned by the workspace's fleet policy for capability needs: the visual
+judge was also tried on `meta/llama-3.2-11b-vision-instruct`, which this harness cannot
+drive, because that model accepts one tool call at a time. It went back to
+`stepfun-ai/step-5-preview`, which reads the screenshots one at a time.
 
 ---
 
