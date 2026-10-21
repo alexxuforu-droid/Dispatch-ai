@@ -329,10 +329,11 @@ test('narrow viewports actually change the tree', async () => {
 
   // The compact trait itself, asserted on copy only `!compact` renders: workspace chrome that
   // disappears when the pane narrows. Both 320 and 900 must have dropped it, which is what keeps
-  // this a compact-vs-desktop claim rather than an inspector-only one.
-  expect(narrow).not.toContain('AI WORKSPACE');
-  expect(medium).not.toContain('AI WORKSPACE');
-  expect(desktop).toContain('AI WORKSPACE');
+  // this a compact-vs-desktop claim rather than an inspector-only one. The caption is sentence
+  // case now, because an uppercase letter-spaced label is a generated-interface mark.
+  expect(narrow).not.toContain('AI workspace');
+  expect(medium).not.toContain('AI workspace');
+  expect(desktop).toContain('AI workspace');
   // ...and the desktop layout differs from both, so narrowing the window is doing real work.
   expect(narrow).not.toEqual(desktop);
   expect(medium).not.toEqual(desktop);
