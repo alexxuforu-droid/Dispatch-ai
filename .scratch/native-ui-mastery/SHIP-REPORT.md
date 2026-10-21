@@ -185,7 +185,8 @@ Result: `Build succeeded. 0 Error(s)`, with only the two known MSB4011 import wa
 React Native Windows property sheets always print.
 
 Screenshots of every screen, taken from the running app, at 900, 1240 and 1500 pixels:
-`C:\Users\Admin\AppData\Local\Temp\opencode\snapshots\judge\`.
+`C:\Users\Admin\AppData\Local\Temp\opencode\snapshots\judge\`. The current set is `r8w1500-*`,
+`r8w1240-*` and `r8w900-*`; the earlier `r7*`, `r6*` and `w*` sets are the before states.
 
 The rule "the chrome is neutral, the colour is content" is measured, not asserted.
 `scripts/measure-colour.ps1` in the plan folder counts the pixels of every capture:
