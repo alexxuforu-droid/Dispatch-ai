@@ -421,7 +421,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
-  toggleTrackOn: { backgroundColor: colors.text, borderColor: colors.text },
+  toggleTrackOn: { backgroundColor: colors.lead, borderColor: colors.text },
   toggleThumb: { width: 14, height: 14, borderRadius: radius.pill, backgroundColor: colors.textQuiet },
   toggleThumbOn: { alignSelf: 'flex-end', backgroundColor: colors.page },
 
