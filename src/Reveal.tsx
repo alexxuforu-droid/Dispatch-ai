@@ -125,7 +125,7 @@ export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, on
   const ring = onAccent ? colors.leadInk : onLight ? colors.page : colors.lead;
   // The fill fades to the hover colour and back. It is the control's own background, so it
   // keeps the control's own radius and nothing moves.
-  const fill = lift.interpolate({ inputRange: [0, 1], outputRange: [baseFill, toRgba(hoverColour ?? 'rgba(255,255,255,0.07)')] });
+  const fill = lift.interpolate({ inputRange: [0, 1], outputRange: [baseFill, toRgba(hoverColour ?? 'rgba(255,255,255,0.10)')] });
   // An absolutely positioned layer is a surface, not a control: painting it would cover
   // what is underneath, which is the opposite of helping the person see where they are.
   const absolute = entries.some(entry => entry.position === 'absolute');
