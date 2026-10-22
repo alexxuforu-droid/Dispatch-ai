@@ -10,10 +10,13 @@ redesigned under the oxfords rules, verified by execution, and judged by fresh a
 ### The token system
 
 `src/theme.ts:1` holds every colour, size, radius and duration in the app. One neutral ladder
-(page, surface, surface raised, surface active), one palette (mint as lead, with support and
-pop roles), state colours that are always paired with a word, and a seven step type scale
-(28/20/16/14/13/12/11) with nothing under 11px, because Windows text scaling runs to 2.25x.
-121 raw hex literals became tokens and 146 sub-11px declarations were raised to the floor.
+(page, surface, surface raised, surface active), one palette (indigo on near-black: the lead
+`#8E8FF0`, the support `#2A2A55`, the pop `#C9C9FF` — the owner did not like the green and
+the white, and the primary button is now that lead with near-black ink, with no white fill
+left in the app), state colours that are always paired with a word, and a seven step type
+scale (28/20/16/14/13/12/11) with nothing under 11px, because Windows text scaling runs to
+2.25x. 121 raw hex literals became tokens and 146 sub-11px declarations were raised to the
+floor.
 
 ### The component set
 
