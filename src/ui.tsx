@@ -20,6 +20,15 @@ import { colors, radius, space, type } from './theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'critical' | 'inverse';
 
+/** The fill each button fades to when the pointer is on it. */
+const HOVER_FILL: Record<ButtonVariant, string> = {
+  primary: colors.leadHover,
+  secondary: colors.surfaceActive,
+  ghost: colors.surfaceActive,
+  critical: colors.criticalSurface,
+  inverse: colors.surfaceActive,
+};
+
 export function Button({
   label,
   onPress,
@@ -39,7 +48,6 @@ export function Button({
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }) {
-  const [hovered, setHovered] = useState(false);
   return (
     <FocusPressable
       testID={testID}
@@ -48,13 +56,13 @@ export function Button({
       accessibilityState={{ disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
-      onHoverIn={() => setHovered(true)}
-      onHoverOut={() => setHovered(false)}
+      // The fill fades to this colour and back. It is the control's own background, so the
+      // radius holds and nothing moves under the pointer.
+      hoverColour={HOVER_FILL[variant]}
       style={({ pressed }) => [
         styles.button,
         styles[`button_${variant}`],
         disabled && styles.buttonDisabled,
-        hovered && !disabled && styles[`buttonHovered_${variant}`],
         pressed && !disabled && styles.pressed,
         style,
       ]}
@@ -357,11 +365,6 @@ const styles = StyleSheet.create({
   // For a button that sits on the lead block, where a white button would not be legible.
   button_inverse: { backgroundColor: colors.page, borderColor: colors.page },
   buttonDisabled: { backgroundColor: colors.surface, borderColor: colors.line },
-  buttonHovered_primary: { backgroundColor: colors.leadHover },
-  buttonHovered_secondary: { backgroundColor: colors.surfaceActive, borderColor: colors.textMuted },
-  buttonHovered_ghost: { backgroundColor: colors.surfaceActive },
-  buttonHovered_critical: { backgroundColor: colors.criticalSurface, borderColor: colors.critical },
-  buttonHovered_inverse: { backgroundColor: colors.surfaceActive },
   buttonLabel: { ...type.label },
   buttonLabel_primary: { color: colors.leadInk },
   buttonLabel_secondary: { color: colors.text },

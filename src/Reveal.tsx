@@ -73,29 +73,78 @@ export function useFocusRing() {
 /** The light fills in the app. A focus ring has to be dark on these. */
 const LIGHT_FILLS = [colors.text, colors.lead, colors.pop].map(value => value.toLowerCase());
 
-export function FocusPressable({ children, style, onFocus, onBlur, focusIndicator = true, ...rest }: React.ComponentProps<typeof Pressable> & { focusIndicator?: boolean }) {
+/** The pressable is wrapped so the fill can be animated. */
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * React Native can only interpolate a colour written as rgba, so a hex is converted before it
+ * is used as the start of a fade. Without this the fade produces a broken colour and the
+ * control picks up an outline it should not have.
+ */
+const toRgba = (colour: string): string => {
+  if (colour.toLowerCase() === 'transparent') return 'rgba(0, 0, 0, 0)';
+  if (!colour.startsWith('#')) return colour;
+  const hex = colour.slice(1);
+  const full = hex.length === 3 ? hex.split('').map(part => part + part).join('') : hex;
+  const red = parseInt(full.slice(0, 2), 16);
+  const green = parseInt(full.slice(2, 4), 16);
+  const blue = parseInt(full.slice(4, 6), 16);
+  const alpha = full.length === 8 ? parseInt(full.slice(6, 8), 16) / 255 : 1;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+};
+
+export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, onPressOut, focusIndicator = true, hoverColour, ...rest }: React.ComponentProps<typeof Pressable> & { focusIndicator?: boolean; hoverColour?: string }) {
   const { focusProps, focused } = useFocusRing();
-  return <Pressable
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const lift = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(lift, {
+      toValue: hovered ? 1 : 0,
+      duration: 120,
+      easing: Easing.out(Easing.quad),
+      // A background colour is not something the native driver can animate, so this one runs
+      // on the JavaScript driver. It is one value on one control.
+      useNativeDriver: false,
+    }).start();
+  }, [hovered, lift]);
+
+  // The press state is tracked here rather than read from the Pressable, because the style has
+  // to be a plain array for the animated fill to resolve.
+  const resolved = typeof style === 'function' ? style({ pressed }) : style;
+  const flat = (Array.isArray(resolved) ? resolved : [resolved]).filter(Boolean) as (Record<string, unknown> | undefined)[];
+  const entries = flat.filter((entry): entry is Record<string, unknown> => Boolean(entry));
+  const background = entries.map(entry => entry.backgroundColor).find(value => typeof value === 'string') as string | undefined;
+  const baseFill = toRgba(background ?? 'transparent');
+  const onAccent = background?.toLowerCase() === colors.lead.toLowerCase();
+  const onLight = background ? LIGHT_FILLS.includes(background.toLowerCase()) : false;
+  const hasBorder = entries.some(entry => typeof entry.borderWidth === 'number' && entry.borderWidth > 0);
+  // The ring follows the fill it sits on: the ink on the lead block, the page colour on a
+  // light fill, and the lead colour on a dark surface.
+  const ring = onAccent ? colors.leadInk : onLight ? colors.page : colors.lead;
+  // The fill fades to the hover colour and back. It is the control's own background, so it
+  // keeps the control's own radius and nothing moves.
+  const fill = lift.interpolate({ inputRange: [0, 1], outputRange: [baseFill, toRgba(hoverColour ?? 'rgba(255,255,255,0.07)')] });
+  // An absolutely positioned layer is a surface, not a control: painting it would cover
+  // what is underneath, which is the opposite of helping the person see where they are.
+  const absolute = entries.some(entry => entry.position === 'absolute');
+  const finalStyle = absolute
+    ? resolved
+    : [
+        resolved,
+        { backgroundColor: fill },
+        ...(focused && focusIndicator && hasBorder ? [{ borderColor: ring }] : []),
+      ];
+
+  return <AnimatedPressable
     {...rest}
+    onHoverIn={(event) => { setHovered(true); rest.onHoverIn?.(event); }}
+    onHoverOut={(event) => { setHovered(false); rest.onHoverOut?.(event); }}
+    onPressIn={(event) => { setPressed(true); onPressIn?.(event); }}
+    onPressOut={(event) => { setPressed(false); onPressOut?.(event); }}
     onFocus={(event) => { focusProps.onFocus(); onFocus?.(event); }}
     onBlur={(event) => { focusProps.onBlur(); onBlur?.(event); }}
-    style={(state) => {
-      const resolved = typeof style === 'function' ? style(state) : style;
-      if (!focused || !focusIndicator) return resolved;
-      const flat = (Array.isArray(resolved) ? resolved : [resolved]).filter(Boolean) as (Record<string, unknown> | undefined)[];
-      const entries = flat.filter((entry): entry is Record<string, unknown> => Boolean(entry));
-      const background = entries.map(entry => entry.backgroundColor).find(value => typeof value === 'string') as string | undefined;
-      const onAccent = background?.toLowerCase() === colors.lead.toLowerCase();
-      const onLight = background ? LIGHT_FILLS.includes(background.toLowerCase()) : false;
-      const hasBorder = entries.some(entry => typeof entry.borderWidth === 'number' && entry.borderWidth > 0);
-      // The ring follows the fill it sits on: the lead colour on a dark surface, the page
-      // colour on a light one, and the ink on the lead block.
-      const ring = onAccent ? colors.leadInk : onLight ? colors.page : colors.lead;
-      if (hasBorder) return [resolved, { borderColor: ring }];
-      // An absolutely positioned layer is a surface, not a control: painting it would cover
-      // what is underneath, which is the opposite of helping the person see where they are.
-      if (entries.some(entry => entry.position === 'absolute')) return resolved;
-      return [resolved, { backgroundColor: onAccent ? colors.pop : colors.surfaceActive }];
-    }}
-  >{children}</Pressable>;
+    style={finalStyle as StyleProp<ViewStyle>}
+  >{children}</AnimatedPressable>;
 }

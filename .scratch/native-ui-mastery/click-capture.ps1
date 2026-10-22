@@ -7,6 +7,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$Out,
   [string]$Click = '',
+  [string]$Hover = '',
   [string]$Size = '',
   [int]$Wheel = 0,
   [int]$WaitMs = 1400
@@ -54,6 +55,12 @@ if ($Wheel -ne 0) {
   $delta = if ($Wheel -gt 0) { 120 } else { -120 }
   [void][Driver]::mouse_event(0x0800, 0, 0, [uint32]($delta * [Math]::Abs($Wheel)), [IntPtr]::Zero)
   Start-Sleep -Milliseconds 700
+}
+
+if ($Hover -match '^(\d+),(\d+)$') {
+  # The pointer is put on a control and left there, so the capture shows the hover state.
+  [void][Driver]::SetCursorPos($rect.Left + [int]$Matches[1], $rect.Top + [int]$Matches[2])
+  Start-Sleep -Milliseconds $WaitMs
 }
 
 if ($Click -match '^(\d+),(\d+)$') {
