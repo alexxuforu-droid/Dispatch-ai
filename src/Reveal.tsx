@@ -71,7 +71,7 @@ export function useFocusRing() {
  * is given a transparent border to recolour.
  */
 /** The light fills in the app. A focus ring has to be dark on these. */
-const LIGHT_FILLS = [colors.text, colors.textDim, colors.pop].map(value => value.toLowerCase());
+const LIGHT_FILLS = [colors.text, colors.lead, colors.pop].map(value => value.toLowerCase());
 
 export function FocusPressable({ children, style, onFocus, onBlur, focusIndicator = true, ...rest }: React.ComponentProps<typeof Pressable> & { focusIndicator?: boolean }) {
   const { focusProps, focused } = useFocusRing();

@@ -73,7 +73,7 @@ describe('the palette', () => {
     // the raised surface, the inverse button on the lead block, and the focus ring on a
     // light fill and on the lead block. Each of these shipped once without a test.
     expect(contrast(colors.page, colors.text)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(colors.page, colors.textDim)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.leadInk, colors.leadHover)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(colors.text, colors.surfaceRaised)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(colors.leadInk, colors.lead)).toBeGreaterThanOrEqual(4.5);
     expect(contrast(colors.page, colors.pop)).toBeGreaterThanOrEqual(4.5);

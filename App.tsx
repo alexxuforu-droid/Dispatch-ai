@@ -331,7 +331,7 @@ function Sidebar({ screen, setScreen, compact, onNew }: { screen: Screen; setScr
       {!compact && <View><Text style={styles.brandName}>Dispatch</Text><Text style={styles.brandCaption}>AI workspace</Text></View>}
     </View>
     <FocusPressable accessibilityRole="button" accessibilityLabel="New run" onPress={onNew} style={({ pressed }) => [styles.newRun, pressed && styles.pressed]}>
-      <DispatchIcon name="plus" size={18} color={colors.page} />{!compact && <Text style={styles.newRunText}>New run</Text>}
+      <DispatchIcon name="plus" size={18} color={colors.text} />{!compact && <Text style={styles.newRunText}>New run</Text>}
     </FocusPressable>
     <ScrollView style={styles.navScroll} contentContainerStyle={styles.navList}>
       {pages.map(page => {
@@ -940,7 +940,7 @@ const styles = StyleSheet.create({
   sidebar: { width: 228, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 12, backgroundColor: colors.page, borderRightWidth: 1, borderRightColor: colors.line, flexDirection: 'column' },
   sidebarCompact: { width: 68, paddingHorizontal: 8, alignItems: 'center' }, brand: { minHeight: 54, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4, marginBottom: 17 }, brandCompact: { justifyContent: 'center', paddingHorizontal: 0 },
   brandMark: { width: 43, height: 43, marginRight: 10, borderRadius: 12 }, brandName: { color: colors.text, fontFamily: typography.display, fontSize: 16, fontWeight: '700', letterSpacing: -.4 }, brandCaption: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, marginTop: 1 },
-  newRun: { height: 42, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.text, marginBottom: 24, gap: 9 }, newRunText: { color: colors.page, fontFamily: typography.body, fontSize: 13, fontWeight: '700' },
+  newRun: { height: 42, borderRadius: 8, borderWidth: 1, borderColor: colors.line, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surfaceRaised, marginBottom: 24, gap: 9 }, newRunText: { color: colors.text, fontFamily: typography.body, fontSize: 13, fontWeight: '700' },
   navGroup: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, marginTop: 16, marginBottom: 6, marginHorizontal: 10 }, navList: { gap: 3 }, navItem: { height: 40, borderRadius: 8, borderWidth: 1, borderColor: 'transparent', paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 12 }, navItemCompact: { width: 48, height: 46, justifyContent: 'center', paddingHorizontal: 0 }, navItemActive: { backgroundColor: colors.surfaceActive }, navText: { flex: 1, color: colors.textQuiet, fontFamily: typography.body, fontSize: 13 }, navTextActive: { color: colors.text, fontWeight: '600' }, pressed: { opacity: 0.82 },
   sidebarSpacer: { flex: 1 }, sidebarBottom: { gap: 9 }, 
   profile: { flexDirection: 'row', alignItems: 'center', gap: 9, borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 12, marginTop: 4 }, profileName: { color: colors.text, fontFamily: typography.body, fontSize: 11, fontWeight: '600' }, profileCaption: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, marginTop: 2 },
