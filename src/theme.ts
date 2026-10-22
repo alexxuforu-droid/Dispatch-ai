@@ -50,6 +50,8 @@ export const colors = {
   attentionSurface: '#241C10',
   critical: '#F49090',
   criticalSurface: '#2A1618',
+  // The destructive button lifted under the pointer: a wash of the critical colour.
+  criticalWash: 'rgba(244, 144, 144, 0.22)',
 
   // The scrim behind a modal. The page is still there, it is just not the page any more.
   scrim: '#0009',

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Pressable, StyleProp, View, ViewStyle } from 'react-native';
-import { colors } from './theme';
+import { colors, motion } from './theme';
 
 /**
  * Native entrance motion for newly arrived content.
@@ -13,7 +13,7 @@ import { colors } from './theme';
  * The test environment renders the final state with no timers, so snapshots stay deterministic
  * and no animation is left running when a test ends.
  */
-const DURATION = 190;
+const DURATION = motion.routine;
 const RISE = 6;
 
 export function Reveal({ children, delay = 0, style }: { children: React.ReactNode; delay?: number; style?: StyleProp<ViewStyle> }) {
@@ -85,11 +85,11 @@ const toRgba = (colour: string): string => {
   if (colour.toLowerCase() === 'transparent') return 'rgba(0, 0, 0, 0)';
   if (!colour.startsWith('#')) return colour;
   const hex = colour.slice(1);
-  const full = hex.length === 3 ? hex.split('').map(part => part + part).join('') : hex;
+  const full = hex.length === 3 || hex.length === 4 ? hex.split('').map(part => part + part).join('') : hex;
   const red = parseInt(full.slice(0, 2), 16);
   const green = parseInt(full.slice(2, 4), 16);
   const blue = parseInt(full.slice(4, 6), 16);
-  const alpha = full.length === 8 ? parseInt(full.slice(6, 8), 16) / 255 : 1;
+  const alpha = full.length === 8 ? parseInt(full.slice(6, 8), 16) / 255 : full.length === 4 ? parseInt(full[3] + full[3], 16) / 255 : 1;
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 };
 
@@ -98,16 +98,20 @@ export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, on
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const lift = useRef(new Animated.Value(0)).current;
+  const liftAnimation = useRef<Animated.CompositeAnimation | null>(null);
 
   useEffect(() => {
-    Animated.timing(lift, {
+    liftAnimation.current?.stop();
+    liftAnimation.current = Animated.timing(lift, {
       toValue: hovered ? 1 : 0,
-      duration: 120,
+      duration: motion.fast,
       easing: Easing.out(Easing.quad),
       // A background colour is not something the native driver can animate, so this one runs
       // on the JavaScript driver. It is one value on one control.
       useNativeDriver: false,
-    }).start();
+    });
+    liftAnimation.current.start();
+    return () => { liftAnimation.current?.stop(); };
   }, [hovered, lift]);
 
   // The press state is tracked here rather than read from the Pressable, because the style has
@@ -129,18 +133,21 @@ export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, on
   // An absolutely positioned layer is a surface, not a control: painting it would cover
   // what is underneath, which is the opposite of helping the person see where they are.
   const absolute = entries.some(entry => entry.position === 'absolute');
+  // A control with a border shows the focus on that border. One without has no border to
+  // recolour, so the focus paints a fill instead, and the hover fill steps aside for it.
+  const focusFill = onAccent ? colors.pop : colors.surfaceActive;
   const finalStyle = absolute
     ? resolved
     : [
         resolved,
-        { backgroundColor: fill },
+        { backgroundColor: focused && focusIndicator && !hasBorder ? focusFill : fill },
         ...(focused && focusIndicator && hasBorder ? [{ borderColor: ring }] : []),
       ];
 
   return <AnimatedPressable
     {...rest}
     onHoverIn={(event) => { setHovered(true); rest.onHoverIn?.(event); }}
-    onHoverOut={(event) => { setHovered(false); rest.onHoverOut?.(event); }}
+    onHoverOut={(event) => { setHovered(false); setPressed(false); rest.onHoverOut?.(event); }}
     onPressIn={(event) => { setPressed(true); onPressIn?.(event); }}
     onPressOut={(event) => { setPressed(false); onPressOut?.(event); }}
     onFocus={(event) => { focusProps.onFocus(); onFocus?.(event); }}

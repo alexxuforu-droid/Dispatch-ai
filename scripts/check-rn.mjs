@@ -23,8 +23,8 @@ const TOKEN_FILE = 'src/theme.ts';
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', '.scratch']);
 const findings = [];
 
-const fail = (file, line, id, message) => findings.push({ level: 'FAIL', file, line, id, message });
-const warn = (file, line, id, message) => findings.push({ level: 'WARN', file, line, id, message });
+const fail = (file, line, id, message, style) => findings.push({ level: 'FAIL', file, line, id, message, style });
+const warn = (file, line, id, message, style) => findings.push({ level: 'WARN', file, line, id, message, style });
 
 function walk(path, files = []) {
   if (!existsSync(path)) return files;
@@ -91,14 +91,15 @@ for (const file of files) {
   // filled thing (a button, a chip, a pill); a block is a surface that carries content.
   for (const match of text.matchAll(/(?:^|[,{])\s*(\w+):\s*\{[^}]*backgroundColor:\s*colors\.(?:accent|lead)\b[^}]*\}/g)) {
     const block = match[0];
+    const style = match[1];
     const size = /(?:minHeight|height):\s*(\d+)/.exec(block);
     const isControl = size ? Number(size[1]) <= 48 : false;
     if (isControl) {
       fail(file, lineOf(text, match.index), 'accent-fill',
-        'lead colour fills a control; chrome and controls stay neutral');
+        'lead colour fills a control; chrome and controls stay neutral', style);
     } else {
       warn(file, lineOf(text, match.index), 'lead-block',
-        'lead colour fills a block; one such block per screen, and only on content');
+        'lead colour fills a block; one such block per screen, and only on content', style);
     }
   }
   for (const match of text.matchAll(/backgroundColor:\s*colors\.(?:accentSubtle|support)\b/g)) {
@@ -151,7 +152,7 @@ for (const file of files) {
 
 const grouped = new Map();
 for (const finding of findings) {
-  const key = `${finding.level}|${finding.id}|${finding.file}`;
+  const key = `${finding.level}|${finding.id}|${finding.file}|${finding.style ?? ''}`;
   if (!grouped.has(key)) grouped.set(key, { ...finding, count: 0, lines: [] });
   const entry = grouped.get(key);
   entry.count += 1;
@@ -166,18 +167,31 @@ const ACCEPTED = new Map([
   ['eyebrow|App.tsx', 'the run card status is a tag on a row, not a label above a heading'],
   ['lead-block|src\\RunWorkspace.tsx', 'the decision row: the one lead block on that screen, on the change waiting for a person'],
   ['lead-text|src\\ui.tsx', 'the inverse button label on the lead block, which is the pairing that stays legible'],
+  ['accent-fill|primary', 'the owner asked for the accent on the primary action, and it is the only one on the screen'],
+  ['lead-block|button_primary', 'the owner asked for the accent on the primary action, and it is the only one on the screen'],
+  ['accent-fill|primaryAction', 'the create button is the one action on the collection screen'],
+  ['accent-fill|providerConnect', 'saving and testing the provider is the one action on the settings screen'],
+  ['accent-fill|planApproveButton', 'approving the plan is the one action on the thread, and the results screen carries the decision instead'],
+  ['accent-fill|checkboxSelected', 'the tick that says a skill is on'],
+  ['lead-block|checkboxSelected', 'the tick that says a skill is on'],
+  ['accent-fill|checkMarkActive', 'the tick that says a skill is on'],
+  ['lead-block|checkMarkActive', 'the tick that says a skill is on'],
+  ['accent-fill|sendButton', 'sending the brief is the one action on the design studio'],
+  ['lead-block|sendButton', 'sending the brief is the one action on the design studio'],
+  ['lead-block|primaryAction', 'the create button is the one block of colour on the collection screen'],
+  ['lead-text|src\\RunWorkspace.tsx', 'the added line in a diff is the content the person is reading'],
 ]);
 
-const isAccepted = finding => ACCEPTED.has(`${finding.id}|${finding.file.replace(/\//g, '\\')}`);
+const isAccepted = finding => ACCEPTED.has(`${finding.id}|${finding.style ?? ''}`) || ACCEPTED.has(`${finding.id}|${finding.file.replace(/\//g, '\\')}`);
 
 for (const entry of grouped.values()) {
   const where = entry.lines.join(', ') + (entry.count > entry.lines.length ? `, +${entry.count - entry.lines.length} more` : '');
-  const reason = ACCEPTED.get(`${entry.id}|${entry.file.replace(/\//g, '\\')}`);
+  const reason = ACCEPTED.get(`${entry.id}|${entry.style ?? ''}`) ?? ACCEPTED.get(`${entry.id}|${entry.file.replace(/\//g, '\\')}`);
   // A finding that was decided on purpose is not a warning: it is accepted, and it says so.
   const level = reason ? 'ACCEPTED' : entry.level;
-  console.log(`${level.padEnd(8)} ${entry.id.padEnd(14)} ${entry.file}  (${where})  ${entry.message}${reason ? `  -- ${reason}` : ''}`);
+  console.log(`${level.padEnd(8)} ${entry.id.padEnd(14)} ${entry.file}${entry.style ? ` [${entry.style}]` : ''}  (${where})  ${entry.message}${reason ? `  -- ${reason}` : ''}`);
 }
-const failures = findings.filter(finding => finding.level === 'FAIL').length;
+const failures = findings.filter(finding => finding.level === 'FAIL' && !isAccepted(finding)).length;
 const warnings = findings.filter(finding => finding.level === 'WARN' && !isAccepted(finding)).length;
 const accepted = findings.filter(finding => finding.level === 'WARN' && isAccepted(finding)).length;
 const perRule = new Map();

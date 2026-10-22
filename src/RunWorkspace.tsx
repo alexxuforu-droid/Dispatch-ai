@@ -270,12 +270,12 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
               <View style={[styles.decisionRow, waitingOnYou && styles.decisionRowWaiting]}>
                 {waitingOnYou ? <Text style={styles.decisionText}>This change is waiting for you</Text> : null}
                 {change.appliedAt && !change.revertedAt
-                  ? <Button label="Undo applied change" disabled={!projectRoot} onPress={() => onUndo(activeRun, change.id)} variant={waitingOnYou ? 'inverse' : 'secondary'} />
+                  ? <Button label="Undo applied change" disabled={!projectRoot} onPress={() => onUndo(activeRun, change.id)} variant={waitingOnYou ? 'primary' : 'secondary'} />
                   : change.revertedAt ? <Chip label="Reverted" critical />
                     : change.rejectedAt ? <Chip label="Rejected" critical />
                       : change.supersededAt ? <Chip label="Superseded" critical />
-                        : <Button label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : itemStatus === 'blocked' ? 'Waiting for its dependencies' : itemStatus === 'failed' ? 'This step failed' : 'Waiting for the review that comes next'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} variant={waitingOnYou ? 'inverse' : 'primary'} />}
-                {canReject ? <Button label="Reject" onPress={() => onReject(activeRun, change.id)} variant="inverse" /> : null}
+                        : <Button label={applying ? 'Applying change…' : secretBlock ? 'Blocked for secrets · fix first' : !projectRoot ? 'Choose a project folder' : itemStatus === 'done' || itemStatus === 'needs-approval' ? 'Apply change' : itemStatus === 'cancelled' ? 'Run was cancelled' : itemStatus === 'blocked' ? 'Waiting for its dependencies' : itemStatus === 'failed' ? 'This step failed' : 'Waiting for the review that comes next'} disabled={!canApply || applying} onPress={() => onApply(activeRun, change.id)} variant="primary" />}
+                {canReject ? <Button label="Reject" onPress={() => onReject(activeRun, change.id)} variant="ghost" /> : null}
               </View>
             </View>;
           })}
@@ -356,14 +356,14 @@ const styles = StyleSheet.create({
   diffBlock: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.control, backgroundColor: colors.page, paddingVertical: space.sm },
   diffRow: { flexDirection: 'row', alignItems: 'flex-start' },
   lineNumber: { ...type.codeSmall, width: 34, color: colors.textMuted, marginRight: space.sm, textAlign: 'right' },
-  diffAdded: { color: colors.text },
+  diffAdded: { color: colors.lead },
   diffRemoved: { color: colors.critical },
   code: { ...type.code, color: colors.text },
 
   // The one lead block on this screen: the change that is waiting for a person.
   decisionRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, flexWrap: 'wrap', padding: space.md, borderRadius: radius.control, backgroundColor: colors.surfaceRaised },
-  decisionRowWaiting: { backgroundColor: colors.lead },
-  decisionText: { ...type.bodySmall, color: colors.page, fontWeight: '600', marginRight: 'auto' },
+  decisionRowWaiting: { borderColor: colors.lead },
+  decisionText: { ...type.bodySmall, color: colors.text, fontWeight: '600', marginRight: 'auto' },
 
   receiptMessage: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: space.sm, gap: 2 },
 });

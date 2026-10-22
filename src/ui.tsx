@@ -25,7 +25,7 @@ const HOVER_FILL: Record<ButtonVariant, string> = {
   primary: colors.leadHover,
   secondary: colors.surfaceActive,
   ghost: colors.surfaceActive,
-  critical: colors.criticalSurface,
+  critical: colors.criticalWash,
   inverse: colors.surfaceActive,
 };
 
@@ -100,7 +100,10 @@ export function IconButton({
         onPress={onPress}
         onHoverIn={() => setHovered(true)}
         onHoverOut={() => setHovered(false)}
-        style={({ pressed }) => [styles.iconButton, hovered && !disabled && styles.iconButtonHovered, disabled && styles.buttonDisabled, pressed && !disabled && styles.pressed, style]}
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
+        hoverColour={colors.surfaceActive}
+        style={({ pressed }) => [styles.iconButton, disabled && styles.buttonDisabled, pressed && !disabled && styles.pressed, style]}
       >
         {icon}
       </FocusPressable>
@@ -385,7 +388,7 @@ const styles = StyleSheet.create({
   },
   iconButtonWrap: { alignItems: 'center', position: 'relative' },
   tooltipLabel: { position: 'absolute', bottom: '100%', right: 0, marginBottom: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceRaised, ...type.meta, color: colors.text },
-  iconButtonHovered: { backgroundColor: colors.surfaceActive, borderColor: colors.line },
+
 
   field: { gap: space.xs },
   fieldLabel: { ...type.label, color: colors.textQuiet },
@@ -424,7 +427,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
   },
-  toggleTrackOn: { backgroundColor: colors.lead, borderColor: colors.text },
+  toggleTrackOn: { backgroundColor: colors.lineStrong, borderColor: colors.text },
   toggleThumb: { width: 14, height: 14, borderRadius: radius.pill, backgroundColor: colors.textQuiet },
   toggleThumbOn: { alignSelf: 'flex-end', backgroundColor: colors.page },
 
