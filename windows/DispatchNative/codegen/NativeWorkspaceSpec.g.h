@@ -26,6 +26,8 @@ struct WorkspaceSpec : winrt::Microsoft::ReactNative::TurboModuleSpec {
       Method<void(Promise<std::string>) noexcept>{6, L"pickDesignReferenceImage"},
       Method<void(std::string, Promise<std::string>) noexcept>{7, L"readDesignReferenceImage"},
       Method<void(std::string, std::string, Promise<std::string>) noexcept>{8, L"saveGeneratedImage"},
+      Method<void(std::string, std::string, Promise<std::optional<std::string>>) noexcept>{9, L"saveExistingFileAs"},
+      Method<void(std::string, std::string, Promise<std::optional<std::string>>) noexcept>{10, L"saveTextAs"},
   };
 
   template <class TModule>
@@ -77,6 +79,16 @@ struct WorkspaceSpec : winrt::Microsoft::ReactNative::TurboModuleSpec {
           "saveGeneratedImage",
           "    REACT_METHOD(saveGeneratedImage) void saveGeneratedImage(std::string base64Png, std::string fileName, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n"
           "    REACT_METHOD(saveGeneratedImage) static void saveGeneratedImage(std::string base64Png, std::string fileName, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n");
+    REACT_SHOW_METHOD_SPEC_ERRORS(
+          9,
+          "saveExistingFileAs",
+          "    REACT_METHOD(saveExistingFileAs) void saveExistingFileAs(std::string sourcePath, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n"
+          "    REACT_METHOD(saveExistingFileAs) static void saveExistingFileAs(std::string sourcePath, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n");
+    REACT_SHOW_METHOD_SPEC_ERRORS(
+          10,
+          "saveTextAs",
+          "    REACT_METHOD(saveTextAs) void saveTextAs(std::string text, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n"
+          "    REACT_METHOD(saveTextAs) static void saveTextAs(std::string text, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n");
   }
 };
 

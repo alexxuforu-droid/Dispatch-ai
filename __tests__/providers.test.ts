@@ -7,7 +7,21 @@
 jest.mock('../src/persistence/providerCredentials', () => ({ loadProviderSecret: jest.fn(async () => 'test-key') }));
 jest.mock('../src/persistence/providerProfile', () => ({ defaultProviderProfile: { endpoint: 'https://api.openai.com/v1', model: '', imageModel: '' } }));
 
-import { ModelCatalogCache, MODEL_CATALOG_TTL_MS, parseModelIds, providerModelCatalog, testProviderConnection } from '../src/providers/openai-compatible';
+import {
+  completeChat,
+  fetchModelIds,
+  generateImage,
+  MAX_MODELS_RESPONSE_BYTES,
+  MAX_MODEL_IDS,
+  MAX_PROVIDER_ERROR_CHARS,
+  ModelCatalogCache,
+  MODEL_CATALOG_TTL_MS,
+  MODELS_FETCH_TIMEOUT_MS,
+  parseModelIds,
+  providerErrorDetail,
+  providerModelCatalog,
+  testProviderConnection,
+} from '../src/providers/openai-compatible';
 import type { ProviderProfile } from '../src/persistence/providerProfile';
 
 const ENDPOINT = 'https://api.openai.com/v1';
@@ -94,5 +108,66 @@ describe('testProviderConnection catalog population', () => {
     stubFetch({ ok: false, status: 401, json: async () => ({}) });
     await expect(testProviderConnection(profile)).rejects.toThrow(/API key/);
     expect(providerModelCatalog.lookup(ENDPOINT, Date.now())).toEqual(['already-cached']);
+  });
+});
+
+// The defect under test: every provider failure surfaced as the same generic sentence, so a
+// bad model id, a typo and a quota error were indistinguishable.
+describe('a provider failure says what the provider said', () => {
+  function stubError(status: number, body: string): void {
+    (globalThis as { fetch?: unknown }).fetch = jest.fn(async () => ({ ok: false, status, text: async () => body }));
+  }
+
+  test('a bad model id reaches the message', async () => {
+    stubError(400, JSON.stringify({ error: { message: 'The model `gpt-nope` does not exist.' } }));
+    await expect(completeChat(profile, [{ role: 'user', content: 'hi' }])).rejects.toThrow(/gpt-nope` does not exist/);
+  });
+
+  test('a quota error reaches the message', async () => {
+    stubError(429, JSON.stringify({ error: { message: 'You exceeded your current quota.' } }));
+    await expect(completeChat(profile, [{ role: 'user', content: 'hi' }])).rejects.toThrow(/exceeded your current quota/);
+  });
+
+  test('an image failure reaches the message', async () => {
+    stubError(400, 'The image model image-1 is not enabled for this endpoint.');
+    await expect(generateImage({ ...profile, imageModel: 'image-1' }, 'a cat')).rejects.toThrow(/image-1 is not enabled/);
+  });
+
+  test('the /models failure reaches the message too', async () => {
+    stubError(500, JSON.stringify({ error: { message: 'The upstream model list is unavailable.' } }));
+    await expect(fetchModelIds(profile)).rejects.toThrow(/upstream model list is unavailable/);
+  });
+
+  test('the detail is bounded, so a huge body cannot become a huge message', () => {
+    expect(providerErrorDetail('x'.repeat(5_000)).length).toBeLessThanOrEqual(MAX_PROVIDER_ERROR_CHARS + 1);
+    expect(providerErrorDetail('')).toBe('');
+    expect(providerErrorDetail('plain text')).toBe('plain text');
+    expect(providerErrorDetail(JSON.stringify({ error: { message: 'bad model' } }))).toBe('bad model');
+  });
+});
+
+describe('the /models call is bounded', () => {
+  test('the model id list is capped', () => {
+    const ids = parseModelIds({ data: Array.from({ length: 1_000 }, (_, index) => ({ id: `m-${index}` })) });
+    expect(ids).toHaveLength(MAX_MODEL_IDS);
+  });
+
+  test('an oversized body is refused', async () => {
+    (globalThis as { fetch?: unknown }).fetch = jest.fn(async () => ({ ok: true, status: 200, text: async () => 'x'.repeat(MAX_MODELS_RESPONSE_BYTES + 10) }));
+    await expect(fetchModelIds(profile)).rejects.toThrow(/too large/);
+  });
+
+  test('the call gives up instead of hanging forever', async () => {
+    jest.useFakeTimers();
+    try {
+      (globalThis as { fetch?: unknown }).fetch = jest.fn(() => new Promise(() => undefined));
+      const settled = fetchModelIds(profile).then(() => undefined, error => error);
+      await jest.advanceTimersByTimeAsync(MODELS_FETCH_TIMEOUT_MS + 10);
+      const error = await settled;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/did not answer/);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

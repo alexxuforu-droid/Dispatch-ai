@@ -1,13 +1,4 @@
-import { Agent, Artifact, Run, Team, WorkItem } from './types';
-import { AutoReviewer } from './coordinator';
-
-export type CheckResult = { name: string; passed: boolean; detail: string; evidenceUri?: string };
-export interface CodeReviewWorker {
-  inspect(input: { run: Run; item: WorkItem; artifacts: Artifact[] }): Promise<CheckResult[]>;
-}
-export interface ImageReviewWorker {
-  inspect(input: { run: Run; item: WorkItem; images: Artifact[] }): Promise<CheckResult[]>;
-}
+import { Agent, Team } from './types';
 
 /** Highest-ranked peer eligible to review the author's work of the given kind: rank >= 4 and strictly above the author. Never the author. */
 export function selectPeerReviewer(team: Team, authorId: string, kind: Agent['kinds'][number] = 'code'): Agent | undefined {
@@ -50,28 +41,9 @@ export function scanSecrets(changes: { path: string; after: string }[]): SecretF
   return findings;
 }
 
-/** Routes deliverables to format-specific automatic reviewers and fails closed if none are configured. */
-export class FormatAwareReviewer implements AutoReviewer {
-  constructor(private readonly code?: CodeReviewWorker, private readonly image?: ImageReviewWorker) {}
-  async review({ run, item }: { run: Run; item: WorkItem }) {
-    if (item.kind === 'code') {
-      if (!this.code) return { passed: false, findings: ['Code review is enabled but no code review worker is configured.'] };
-      const artifacts = run.artifacts.filter(artifact => artifact.runId === run.id && (artifact.kind === 'code-diff' || artifact.kind === 'file'));
-      const checks = await this.code.inspect({ run, item, artifacts });
-      return summarize('Code', checks);
-    }
-    if (item.kind === 'image') {
-      if (!this.image) return { passed: false, findings: ['Image review is enabled but no visual review worker is configured.'] };
-      const images = run.artifacts.filter(artifact => artifact.runId === run.id && artifact.kind === 'image');
-      const checks = await this.image.inspect({ run, item, images });
-      return summarize('Image', checks);
-    }
-    return { passed: true, findings: [] };
-  }
-}
-
-function summarize(format: string, checks: CheckResult[]) {
-  const findings = checks.filter(check => !check.passed).map(check => `${format} review · ${check.name}: ${check.detail}`);
-  if (!checks.length) findings.push(`${format} review returned no verifiable checks; human review is required.`);
-  return { passed: checks.length > 0 && findings.length === 0, findings };
+/** A hard block by design: there is no override, so a flagged proposal can never reach the project folder by hand. */
+export function codeApplySecretBlock(change: { path: string; after: string }): string | null {
+  const [finding] = scanSecrets([change]);
+  if (!finding) return null;
+  return `Refused to apply ${change.path}${finding.line ? `:${finding.line}` : ''}: possible hardcoded ${finding.pattern} assignment. Remove the quoted value and use configuration or a secret store, then apply the revised proposal.`;
 }

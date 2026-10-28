@@ -11,6 +11,8 @@ export interface Spec extends TurboModule {
   pickDesignReferenceImage(): Promise<string>;
   readDesignReferenceImage(uri: string): Promise<string>;
   saveGeneratedImage(base64Png: string, fileName: string): Promise<string>;
+  saveExistingFileAs(sourcePath: string, suggestedName: string): Promise<string | null>;
+  saveTextAs(text: string, suggestedName: string): Promise<string | null>;
 }
 
 export default TurboModuleRegistry.get<Spec>('DispatchWorkspace');

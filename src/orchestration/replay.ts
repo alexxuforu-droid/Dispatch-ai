@@ -46,6 +46,30 @@ export function replayRun(seed: Run, events: RunEvent[]): Run {
         run.messages.push({ id, runId: run.id, workItemId: payload.itemId as string | undefined, attempt: payload.attempt as number | undefined, from: 'Automatic code reviewer', to: 'team', text: String(payload.finding ?? ''), kind: 'finding', createdAt: event.at });
       }
     }
+    if (event.type === 'review.verdict') {
+      // The reviewer verdict belongs in the log: without it the history shows that work was
+      // reviewed but not what the reviewer decided.
+      const id = `msg-replay-${event.seq}`;
+      const passed = payload.passed === true;
+      const findings = Array.isArray(payload.findings) ? payload.findings.filter((finding): finding is string => typeof finding === 'string') : [];
+      if (!run.messages.some(entry => entry.id === id)) {
+        run.messages.push({
+          id, runId: run.id, workItemId: payload.itemId as string | undefined, attempt: payload.attempt as number | undefined,
+          from: typeof payload.reviewer === 'string' ? payload.reviewer : 'Automatic code reviewer', to: 'team',
+          text: passed ? 'Review passed.' : findings.join('\n') || 'Review did not pass. Human review is required.',
+          kind: passed ? 'update' : 'finding', createdAt: event.at,
+        });
+      }
+    }
+    if (event.type === 'human.decision') {
+      const id = `msg-replay-${event.seq}`;
+      const action = String(payload.action ?? 'decided');
+      const path = typeof payload.path === 'string' ? payload.path : '';
+      const by = typeof payload.by === 'string' && payload.by ? payload.by : 'You';
+      if (!run.messages.some(entry => entry.id === id)) {
+        run.messages.push({ id, runId: run.id, from: by, to: 'team', text: `${by} ${action === 'undo' ? 'undid' : action === 'reject' ? 'rejected' : 'applied'} ${path || 'a proposed change'}.`, kind: 'update', createdAt: event.at });
+      }
+    }
     if (event.type === 'approval.required') {
       const item = run.items.find(candidate => candidate.id === payload.itemId);
       if (item && item.status !== 'done') item.status = 'needs-approval';

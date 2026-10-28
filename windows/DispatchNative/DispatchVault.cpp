@@ -61,7 +61,7 @@ void DispatchVault::setSecret(std::string providerId, std::string secret, React:
     if (secretWide.size() * sizeof(wchar_t) > CRED_MAX_CREDENTIAL_BLOB_SIZE) {
       result.Reject("The provider key is too long to store in Windows Credential Manager."); return;
     }
-    removeIfPresent(providerId);
+    // CredWriteW replaces a generic credential with the same target, so a failed write leaves the previous key intact.
     const auto target = targetName(providerId);
     CREDENTIALW credential{};
     credential.Type = CRED_TYPE_GENERIC;

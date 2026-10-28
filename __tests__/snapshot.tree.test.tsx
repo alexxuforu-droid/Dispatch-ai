@@ -2,6 +2,7 @@ import React, { act } from 'react';
 import renderer, { ReactTestRenderer } from 'react-test-renderer';
 
 import { MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT } from '../src/layoutFloor';
+import { COMPACT_WIDTH } from '../src/app/types';
 
 // Dev-only tree dumper. Uses require() rather than a node-typed import so the repo stays
 // free of an @types/node dependency just to render a snapshot. No local declaration of
@@ -262,15 +263,13 @@ function controlsOpeningRunSetup(tree: ReactTestRenderer): any[] {
   return found;
 }
 
-// The desktop counterpart of the 320px concern, stated against the floor we actually enforce.
-// Every width at or above MIN_WINDOW_WIDTH shows the inspector inline; only 320, which sits below
-// the floor and cannot be reached in the shipping window, is a diagnostic where a labelled action
-// opens the same inspector instead. The 900 row is the one that fails today: `compact` is
-// `width < 1040`, so at 900 the inspector is absent from the tree entirely and "Run setup" is
-// nowhere on the Dispatch screen, while the same claim holds at 1040 and 1440.
+// The desktop counterpart of the 320px concern, stated against the compact threshold we actually
+// enforce. Every width at or above COMPACT_WIDTH shows the inspector inline; only widths below it
+// (including the 900px shipping floor) show the composer instead, with run setup reachable by the
+// labelled button press below.
 test('the run inspector is reachable at every supported window width', async () => {
   const App = require('../App');
-  for (const width of [MIN_WINDOW_WIDTH, 1040, 1440]) {
+  for (const width of [COMPACT_WIDTH, 1440]) {
     setViewport(width, 900);
     const json = await snapshot(`screen-dispatch-inspector-${width}`, React.createElement(App.default, { initialScreen: 'dispatch' }));
     // Rendered copy, not a boolean. The inspector's own sections must be in the tree.
@@ -340,11 +339,13 @@ test('narrow viewports actually change the tree', async () => {
   expect(narrow).not.toEqual(desktop);
   expect(medium).not.toEqual(desktop);
 
-  // The intentional responsive difference that replaced a byte-identity assertion. 320 is below
-  // MIN_WINDOW_WIDTH, so it carries no inline inspector; 900 is at the floor and shows one. Two
-  // widths on the same side of the 1040 threshold, now guaranteed different for a reason rather
-  // than only incidentally. Fails today: neither renders the inspector.
-  expect(medium).toContain('Review policy');
+  // The intentional responsive difference: both 320 and 900 sit below COMPACT_WIDTH (1040,
+  // src/app/types.ts:17), so neither carries the inline inspector; 1440 is above it and does.
+  // Two widths on the same side of the threshold, identical for a stated reason rather than
+  // incidentally; only the jump past 1040 changes the tree.
   expect(narrow).not.toContain('Review policy');
-  expect(narrow).not.toEqual(medium);
+  expect(medium).not.toContain('Review policy');
+  expect(desktop).toContain('Review policy');
+  expect(narrow).toEqual(medium);
+  expect(narrow).not.toEqual(desktop);
 }, 60000);

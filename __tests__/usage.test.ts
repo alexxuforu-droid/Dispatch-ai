@@ -17,6 +17,7 @@ import {
   completeChat,
   estimateChatUsage,
   estimateTokens,
+  MAX_MODEL_IDS,
   parseModelIds,
   parseProviderUsage,
 } from '../src/providers/openai-compatible';
@@ -281,7 +282,10 @@ describe('the catalog parse is not quadratic in provider-controlled size', () =>
     const data = Array.from({ length: 20_000 }, (_, index) => ({ id: `model-${index % 5_000}` }));
     const started = Date.now();
     const ids = parseModelIds({ data });
-    expect(ids).toHaveLength(5_000);
+    // The listing is a suggestion source: it is capped, and the cap is the same number the
+    // provider layer and the catalog store use.
+    expect(ids).toHaveLength(MAX_MODEL_IDS);
+    expect(MAX_MODEL_IDS).toBe(500);
     // Linear enough to be unnoticeable; the old includes() dedupe took over a second here.
     expect(Date.now() - started).toBeLessThan(1_000);
   });

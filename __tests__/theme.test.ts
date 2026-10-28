@@ -17,6 +17,25 @@ import { colors, radius, space, type } from '../src/theme';
 
 const repoRoot = path.join(__dirname, '..');
 
+/**
+ * The directories the token scan covers.
+ *
+ * One list, so widening the scan is one edit. It names the view folders and the policy
+ * folder that were converted to the tokens; the folders that have not been converted yet
+ * are added here as they are.
+ */
+const TOKEN_SCAN_DIRECTORIES = [
+  'src/app/views/shell',
+  'src/app/views/dispatch',
+  'src/app/views/pickers',
+  'src/app/views/shared',
+  'src/app/policy',
+];
+
+function tokenScannedFiles(): string[] {
+  return TOKEN_SCAN_DIRECTORIES.flatMap((dir: string) => sourceFiles(path.join(repoRoot, dir)));
+}
+
 function sourceFiles(dir: string): string[] {
   const stat = fs.statSync(dir);
   if (stat.isFile()) return dir.endsWith('.tsx') || dir.endsWith('.ts') ? [dir] : [];
@@ -189,6 +208,35 @@ describe('the screens follow the scale too', () => {
       const text = fs.readFileSync(file, 'utf8');
       for (const match of text.matchAll(/borderRadius:\s*(\d+(?:\.\d+)?)/g)) {
         if (!allowed.has(Number(match[1]))) offenders.push(`${path.relative(repoRoot, file)}: ${match[1]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+// The tokens have to be used in the code that uses them, not only in the token file. These
+// two tests hold the converted view folders to that: a font family is named by the token
+// file, and spacing comes off the spacing scale instead of being written by hand.
+describe('the converted views use the tokens', () => {
+  test('no font family in the scanned views is named by hand', () => {
+    const offenders: string[] = [];
+    for (const file of tokenScannedFiles()) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const match of text.matchAll(/fontFamily:\s*['"][^'"]+['"]/g)) {
+        offenders.push(`${path.relative(repoRoot, file)}: ${match[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test('no spacing value in the scanned views is written as a raw number', () => {
+    const offenders: string[] = [];
+    for (const file of tokenScannedFiles()) {
+      const text = fs.readFileSync(file, 'utf8');
+      for (const match of text.matchAll(/\b(?:padding|margin|gap)[A-Za-z]*:\s*(\d+(?:\.\d+)?)/g)) {
+        // Zero is the absence of spacing, so it needs no token.
+        if (Number(match[1]) === 0) continue;
+        offenders.push(`${path.relative(repoRoot, file)}: ${match[0]}`);
       }
     }
     expect(offenders).toEqual([]);

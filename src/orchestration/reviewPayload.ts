@@ -9,17 +9,18 @@
  * innocuous, and the fourth reaches disk unreviewed.
  *
  * Two properties matter, and they are different:
- *  - COMPLETE: every file the reviewer was shown is also a file apply will write. Enforced by
+ *  - COMPLETE: every byte the reviewer was shown is also a byte apply will write. Enforced by
  *    refusing auto-apply on an incomplete payload, because the reviewer cannot honestly pass on
- *    material it never received.
+ *    material it never received. A file that was clipped counts against completeness even though
+ *    the file itself was included: the reviewer saw part of it, not the proposal.
  *  - BALANCED: one enormous file cannot starve the others out of the budget. The per-file budget
  *    is the total divided by the file count, so a proposal is either wholly reviewable or
  *    visibly truncated rather than silently partial.
  */
 
-export const REVIEW_PAYLOAD_BUDGET = 30000;
+export const REVIEW_PAYLOAD_BUDGET = 40000;
 const OVERHEAD_PER_FILE = 64; // "File: <path>\n\nBEFORE:\n ... \n\n---\n\n"
-const MAX_BYTES_PER_FILE = 12000;
+const MAX_BYTES_PER_FILE = 20000;
 
 export type ReviewableChange = { path: string; before: string; after: string };
 
@@ -28,23 +29,31 @@ export type ReviewPayload = {
   text: string;
   /** Paths present in `text`, in order. */
   included: string[];
-  /** Paths that did not fit. Empty on a complete payload. */
+  /** Paths that did not fit at all. Empty on a complete payload. */
   omitted: string[];
-  /** True when every proposed change appears in `text`. */
+  /** Paths whose contents were clipped: shown, but not in full. Empty on a complete payload. */
+  clipped: string[];
+  /** True when every proposed change appears in `text` in full. */
   complete: boolean;
 };
 
 export function buildReviewPayload(changes: ReviewableChange[], budget = REVIEW_PAYLOAD_BUDGET): ReviewPayload {
-  if (!changes.length) return { text: '', included: [], omitted: [], complete: true };
+  if (!changes.length) return { text: '', included: [], omitted: [], clipped: [], complete: true };
 
-  const perFile = Math.min(MAX_BYTES_PER_FILE, Math.max(1, Math.floor((budget - changes.length * OVERHEAD_PER_FILE) / changes.length)));
+  // Each file spends the budget on a before and an after, so its share is split in half:
+  // otherwise one enormous file takes the whole budget and starves every other file out.
+  const perFile = Math.min(MAX_BYTES_PER_FILE, Math.max(1, Math.floor((budget - changes.length * OVERHEAD_PER_FILE) / (changes.length * 2))));
   const included: string[] = [];
   const omitted: string[] = [];
+  const clipped: string[] = [];
   const blocks: string[] = [];
 
   changes.forEach(change => {
     const before = clip(change.before, perFile);
     const after = clip(change.after, perFile);
+    // Clipping is a fact about this file, not about the budget: a clipped file was shown, but
+    // the reviewer did not see all of it, so it can never count as reviewed.
+    if (before !== change.before || after !== change.after) clipped.push(change.path);
     const block = `File: ${change.path}\n\nBEFORE:\n${before}\n\nAFTER:\n${after}`;
     if (blocks.join('\n\n---\n\n').length + block.length + 4 > budget && blocks.length) {
       omitted.push(change.path);
@@ -58,7 +67,8 @@ export function buildReviewPayload(changes: ReviewableChange[], budget = REVIEW_
     text: blocks.join('\n\n---\n\n'),
     included,
     omitted,
-    complete: omitted.length === 0,
+    clipped,
+    complete: omitted.length === 0 && clipped.length === 0,
   };
 }
 

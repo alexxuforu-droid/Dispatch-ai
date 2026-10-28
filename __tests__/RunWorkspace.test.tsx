@@ -11,7 +11,7 @@ const snapshotDir = path.join(process.env.LOCALAPPDATA ?? 'C:\\Users\\Admin\\App
 
 jest.setTimeout(60000);
 
-const { ResultsStudio, RunRoom } = require('../src/RunWorkspace');
+const { ResultsStudio, RunRoom, RunsInbox } = require('../src/RunWorkspace');
 
 type TreeNode = { type: string; props: Record<string, unknown>; children?: (string | TreeNode)[] | string | null };
 type TreeRoot = TreeNode | string | null | TreeNode[];
@@ -335,6 +335,35 @@ test('the results notice can be dismissed', async () => {
   await unmount(tree);
 }, 60000);
 
+test('reject stays visible but disabled while the same proposal is applying', async () => {
+  const run = resultsRun('done', resultsChange());
+  const { tree } = await mountResultsStudio({ run, projectRoot: 'Z:\\fixture-project', applyingChanges: ['change-greeting'] });
+  const reject = controlsMatching(tree.toJSON(), /^reject$/i)[0];
+  if (!reject) throw new Error('the proposal offers no reject control during apply');
+  expect(controlEnabled(reject)).toBe(false);
+  expect(subtreeText(tree.toJSON())).toMatch(/applying change/i);
+  await unmount(tree);
+});
+
+test('the earliest image version is not shown as its own previous version', async () => {
+  const { Image } = require('react-native');
+  const run = resultsRun('done', resultsChange());
+  run.artifacts = [
+    { id: 'image-old', runId: run.id, kind: 'image', name: 'earlier.png', uri: 'file:///earlier.png', createdBy: 'builder' },
+    { id: 'image-new', runId: run.id, kind: 'image', name: 'latest.png', uri: 'file:///latest.png', createdBy: 'builder' },
+  ];
+  const { tree } = await mountResultsStudio({ run });
+
+  const imageComparison = tree.root.findByProps({ testID: 'image-comparison' });
+  expect(imageComparison.findAll(node => node.type === Image)).toHaveLength(2);
+  const earlier = controlsMatching(tree.toJSON(), /earlier\.png · version 1/i)[0];
+  if (!earlier) throw new Error('the earliest image version cannot be selected');
+  await pressControl(earlier);
+
+  expect(imageComparison.findAll(node => node.type === Image)).toHaveLength(1);
+  await unmount(tree);
+});
+
 // ---------------------------------------------------------------------------
 // Keyboard focus
 // ---------------------------------------------------------------------------
@@ -380,6 +409,26 @@ test('a focused control shows a focus ring and loses it on blur', async () => {
   await unmount(tree);
 }, 60000);
 
+test('a focused borderless lead control gets a high-contrast ink outline', async () => {
+  const { FocusPressable } = require('../src/Reveal');
+  const { StyleSheet, Text } = require('react-native');
+  const { colors } = require('../src/theme');
+  const tree = await mount(React.createElement(FocusPressable, {
+    accessibilityRole: 'button',
+    accessibilityLabel: 'Selected preset',
+    style: [{ backgroundColor: colors.surface }, { backgroundColor: colors.lead }],
+  }, React.createElement(Text, null, 'Preset')));
+  const control = pressableNodes(tree.toJSON()).find(node => node.props.accessibilityLabel === 'Selected preset');
+  if (!control) throw new Error('the preset has no button in the accessibility tree');
+  const focus = control.props.onFocus as ((event: unknown) => void) | undefined;
+  if (!focus) throw new Error('the control cannot receive keyboard focus');
+  await act(async () => { focus({}); });
+  const ring = tree.root.findAll(node => node.props.testID === 'focus-visible-ring')[0];
+  if (!ring) throw new Error('a borderless control has no visible focus outline');
+  expect(StyleSheet.flatten(ring.props.style as never)).toMatchObject({ borderColor: colors.leadInk, borderWidth: 2 });
+  await unmount(tree);
+}, 60000);
+
 // ---------------------------------------------------------------------------
 // Entrance motion
 // ---------------------------------------------------------------------------
@@ -405,11 +454,11 @@ type RunRoomProps = {
   run: Run | null;
   busy: boolean;
   onPause: () => void;
-  // RunRoom renders the run App hands it, which is `run ?? runHistory[0]`. approvePlan takes the
-  // run it should resume (App.tsx:174), so Resume must pass back the run on screen -- the App's
-  // current run is not knowable from inside the component.
+  // RunsInbox passes the selected row's run. Resume must keep that exact selection instead of
+  // falling back to whichever run happens to be current in Dispatch.
   onResume: (run: Run) => void;
-  onResults: () => void;
+  onPlan: (run: Run) => void;
+  onResults: (run: Run) => void;
   onUpdate: (run: Run) => void;
 };
 
@@ -428,6 +477,146 @@ function roomRun(): Run {
   };
 }
 
+function inboxRun(id: string, brief: string, messages: Run['messages'] = []): Run {
+  const at = '2026-10-19T08:00:00.000Z';
+  return {
+    id,
+    brief,
+    status: 'running',
+    teamId: 'team-default',
+    items: [],
+    messages,
+    artifacts: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+test('Runs is an inbox with selectable conversations and a messages-only selected thread', async () => {
+  const older = inboxRun('run-older', 'Tighten the release notes.', [
+    { id: 'message-1', runId: 'run-older', from: 'Planner', to: 'team', text: 'I will start with the release title.', createdAt: '2026-10-19T08:00:00.000Z', kind: 'handoff' },
+    { id: 'message-2', runId: 'run-older', from: 'Builder', to: 'Planner', text: 'The heading now fits above the fold.', createdAt: '2026-10-19T08:01:00.000Z', kind: 'update' },
+  ]);
+  const selected = inboxRun('run-selected', 'Check the setup screen.');
+  const onSelectRun = jest.fn();
+  const onOpenPlan = jest.fn();
+  const onOpenResults = jest.fn();
+  const tree = await mount(React.createElement(RunsInbox, {
+    runs: [older, selected],
+    selectedRun: older,
+    busyRunId: null,
+    onSelectRun,
+    onOpenPlan,
+    onOpenResults,
+    onPause: jest.fn(),
+    onResume: jest.fn(),
+    onUpdate: jest.fn(),
+  }));
+
+  const rendered = subtreeText(tree.toJSON());
+  expect(rendered).toContain('Tighten the release notes.');
+  expect(rendered).toContain('Check the setup screen.');
+  expect(rendered).not.toContain('Assignments');
+  expect(rendered).not.toContain('tasks done');
+  const thread = tree.root.findByProps({ testID: 'run-chat-thread' });
+  const threadText = subtreeText(thread as unknown as TreeNode);
+  expect(threadText.indexOf('I will start with the release title.')).toBeLessThan(threadText.indexOf('The heading now fits above the fold.'));
+
+  const select = controlsMatching(tree.toJSON(), /Check the setup screen/i).find(control => (control.props.accessibilityState as { selected?: boolean } | undefined)?.selected === false);
+  if (!select) throw new Error('the other run has no selectable inbox row');
+  await pressControl(select);
+  expect(onSelectRun).toHaveBeenCalledWith(selected);
+  await act(async () => tree.update(React.createElement(RunsInbox, {
+    runs: [older, selected],
+    selectedRun: selected,
+    busyRunId: null,
+    onSelectRun,
+    onOpenPlan,
+    onOpenResults,
+    onPause: jest.fn(),
+    onResume: jest.fn(),
+    onUpdate: jest.fn(),
+    onStartRun: jest.fn(),
+  })));
+
+  const plan = controlsMatching(tree.toJSON(), /^plan$/i)[0];
+  const results = controlsMatching(tree.toJSON(), /^results$/i)[0];
+  if (!plan || !results) throw new Error('the selected chat has no separate plan and results routes');
+  await pressControl(plan);
+  await pressControl(results);
+  expect(onOpenPlan).toHaveBeenCalledWith(selected);
+  expect(onOpenResults).toHaveBeenCalledWith(selected);
+  await unmount(tree);
+});
+
+test('Runs inbox empty state offers a route to start the first run', async () => {
+  const onStartRun = jest.fn();
+  const tree = await mount(React.createElement(RunsInbox, {
+    runs: [],
+    selectedRun: null,
+    busyRunId: null,
+    onSelectRun: jest.fn(),
+    onOpenPlan: jest.fn(),
+    onOpenResults: jest.fn(),
+    onPause: jest.fn(),
+    onResume: jest.fn(),
+    onUpdate: jest.fn(),
+    onStartRun,
+  }));
+  expect(subtreeText(tree.toJSON())).toMatch(/no runs yet/i);
+  const start = controlsMatching(tree.toJSON(), /start a run/i)[0];
+  if (!start) throw new Error('the empty inbox has no start-run action');
+  await pressControl(start);
+  expect(onStartRun).toHaveBeenCalledTimes(1);
+  await unmount(tree);
+});
+
+test('a new message offers a jump without replacing the selected run while the reader is above the bottom', async () => {
+  const first = { id: 'message-1', runId: 'run-live', from: 'Planner', to: 'team', text: 'First update.', createdAt: '2026-10-19T08:00:00.000Z', kind: 'handoff' as const };
+  const second = { id: 'message-2', runId: 'run-live', from: 'Builder', to: 'team', text: 'Second update.', createdAt: '2026-10-19T08:01:00.000Z', kind: 'update' as const };
+  const initial = inboxRun('run-live', 'Keep the selected run steady.', [first]);
+  const props = {
+    runs: [initial],
+    selectedRun: initial,
+    busyRunId: null,
+    onSelectRun: jest.fn(),
+    onOpenPlan: jest.fn(),
+    onOpenResults: jest.fn(),
+    onPause: jest.fn(),
+    onResume: jest.fn(),
+    onUpdate: jest.fn(),
+    onStartRun: jest.fn(),
+  };
+  const tree = await mount(React.createElement(RunsInbox, props));
+  const thread = tree.root.findByProps({ testID: 'run-chat-thread' });
+  await act(async () => {
+    (thread.props.onScroll as (event: unknown) => void)({ nativeEvent: { contentOffset: { y: 0 }, layoutMeasurement: { height: 220 }, contentSize: { height: 900 } } });
+  });
+  const updated = { ...initial, messages: [first, second] };
+  await act(async () => tree.update(React.createElement(RunsInbox, { ...props, runs: [updated], selectedRun: updated })));
+  expect(subtreeText(tree.toJSON())).toContain('1 new message · Jump to latest');
+  expect(subtreeText(tree.toJSON())).toContain('Keep the selected run steady.');
+  await unmount(tree);
+});
+
+test('a completed run does not offer to send a message to an inactive team', async () => {
+  const { TextInput } = require('react-native');
+  const completed = { ...roomRun(), status: 'completed' as const };
+  const tree = await mount(React.createElement(RunRoom, {
+    run: completed,
+    busy: false,
+    onPause: jest.fn(),
+    onResume: jest.fn(),
+    onPlan: jest.fn(),
+    onResults: jest.fn(),
+    onUpdate: jest.fn(),
+  }));
+  const inactiveComposer = tree.root.findAll(node => node.type === TextInput && node.props.accessibilityLabel === 'Message the agent team');
+  expect(inactiveComposer).toHaveLength(0);
+  expect(subtreeText(tree.toJSON())).toContain('This run is complete. Start a new run to message the team.');
+  await unmount(tree);
+});
+
 test('Resume in the run room passes the run on screen to its callback', async () => {
   const displayed = roomRun();
   const onResume = jest.fn();
@@ -436,6 +625,7 @@ test('Resume in the run room passes the run on screen to its callback', async ()
     busy: false,
     onPause: jest.fn(),
     onResume: onResume as unknown as () => void,
+    onPlan: jest.fn(),
     onResults: jest.fn(),
     onUpdate: jest.fn(),
   }));

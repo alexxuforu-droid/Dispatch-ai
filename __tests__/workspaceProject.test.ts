@@ -42,6 +42,7 @@ test('a missing native module is refused out loud, never silently', async () => 
   await expect(project.readProjectText('C:\\work', 'notes.md')).rejects.toThrow(/unavailable/i);
   await expect(project.grepProjectText('C:\\work', '', 'needle')).rejects.toThrow(/unavailable/i);
   await expect(project.applyProjectFile('C:\\work', 'notes.md', 'before', 'after', false)).rejects.toThrow(/unavailable/i);
+  await expect(project.applyProjectChanges('C:\\work', [{ path: 'notes.md', before: 'before', after: 'after' }], async () => undefined)).rejects.toThrow(/unavailable/i);
   await expect(project.removeProjectFile('C:\\work', 'notes.md', 'before')).rejects.toThrow(/unavailable/i);
   await expect(project.pickDesignReferenceImage()).rejects.toThrow(/unavailable/i);
   await expect(project.saveGeneratedImage('AAA', 'shot.png')).rejects.toThrow(/unavailable/i);

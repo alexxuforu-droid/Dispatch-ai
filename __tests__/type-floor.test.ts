@@ -1,9 +1,9 @@
 /**
  * The type floor, enforced.
  *
- * Windows text scaling grows from the base size, so a label set below 10px is unreadable
+ * Windows text scaling grows from the base size, so a label set below 11px is unreadable
  * before scaling even starts. The theme documents that floor, so this test holds the
- * stylesheet to it: every font size declared in the app's own UI sources is at least 10.
+ * stylesheet to it: every font size declared in the app's own UI sources is at least 11.
  *
  * The file is read with the node runtime rather than imported, because the repo has no
  * @types/node: a type-only import would break the type check for the whole project.
@@ -32,7 +32,7 @@ function sourceFiles(target: string): string[] {
     });
 }
 
-test('no user-facing text is set below the 10px type floor', () => {
+test('no user-facing text is set below the 11px type floor', () => {
   const offenders: string[] = [];
   for (const root of ROOTS) {
     for (const file of sourceFiles(root)) {

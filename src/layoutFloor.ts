@@ -6,7 +6,7 @@
  * own breakpoints put "Small" below 640px, and every comparable developer tool sits far above
  * it. What actually matters for a dense multi-pane app is that the task board stays legible and
  * that Windows text scaling has room to grow into -- TextScaleFactor runs 1.0 to 2.25, and this
- * UI declares type as small as 7px.
+ * UI declares type as small as 11px.
  *
  * These values mirror `kMinWindowWidth` / `kMinWindowHeight` in
  * windows/DispatchNative/DispatchNative.cpp. `__tests__/layout-floor.test.ts` asserts the two

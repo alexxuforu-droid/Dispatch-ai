@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Headless regression suite for the orchestration core.
  * Pure TypeScript: Coordinator, review selectors, replay, event store.
  * No provider, no native modules, fully deterministic.
@@ -8,11 +8,33 @@
 // real here (its eviction behaviour is under test); only the storage behind it is memory.
 jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
 
+// The workspace tools talk to the native project folder. The engine's own copy of that module
+// is mocked here so the tool dispatcher can be exercised without a Windows project folder.
+jest.mock('../src/persistence/workspaceProject', () => ({
+  listProjectFiles: jest.fn(async () => []),
+  readProjectText: jest.fn(async () => ''),
+  applyProjectChanges: jest.fn(async (_rootPath: string, changes: any[], persistCallback: () => Promise<void>) => {
+    await persistCallback();
+    return { ok: true, written: changes.map((c: any) => c.path), rolledBack: [], failed: null };
+  }),
+  grepProjectText: jest.fn(async () => []),
+  readDesignReferenceImage: jest.fn(async () => ({ mimeType: 'image/png', base64: '' })),
+  saveGeneratedImage: jest.fn(async () => 'image://saved'),
+  removeProjectFile: jest.fn(async () => ''),
+  pickDesignReferenceImage: jest.fn(async () => undefined),
+  loadProjectRoot: jest.fn(async () => ''),
+  selectProjectFolder: jest.fn(async () => ''),
+}));
+
 import { Coordinator, RunStoreError, AgentExecutor, AgentResult, AutoReviewer, RunApproval } from '../src/orchestration/coordinator';
 import { MemoryEventStore } from '../src/orchestration/event-store';
-import { FormatAwareReviewer, scanSecrets, selectCodeReviewer, selectImageReviewer, selectPeerReviewer } from '../src/orchestration/review';
+import { scanSecrets, selectCodeReviewer, selectImageReviewer, selectPeerReviewer } from '../src/orchestration/review';
 import { replayRun } from '../src/orchestration/replay';
+import { recordHumanDecision } from '../src/orchestration/humanDecision';
+import { parseToolCalls } from '../src/orchestration/toolCalls';
+import { withDeadline, RequestTimeoutError } from '../src/orchestration/timeout';
 import { Agent, CodeChange, Run, RunEvent, Team, WorkItem } from '../src/orchestration/types';
+import type { StagedWorkspaceFile } from '../src/orchestration/workspaceExecutor';
 import { clearGeneratedImages, forgetGeneratedImage, readCachedOrStoredImage, rememberGeneratedImage } from '../src/persistence/generatedImageCache';
 import { clearUsage, readUsage } from '../src/persistence/usageLedger';
 
@@ -179,6 +201,27 @@ describe('Coordinator.execute', () => {
     const done = await coordinator.execute(run, team([agent()]));
     expect(done.status).toBe('failed');
     expect(done.messages[done.messages.length - 1].text).toMatch(/dependency cycle|failed dependency/);
+  });
+
+  test('a dependency edge added after plan creation demotes the dependent item', async () => {
+    const order: string[] = [];
+    const store = new MemoryEventStore();
+    const ex = executor((step) => { order.push(step.id); return { summary: 'ok' }; });
+    const coordinator = new Coordinator(store, ex.run, ok.run, approval().run);
+    // Two independent items, both 'ready' as created.
+    const run = await coordinator.create('b', team([agent()]), [
+      { title: 'A', kind: 'code', agentId: 'builder' },
+      { title: 'B', kind: 'code', agentId: 'builder' },
+    ]);
+    // Simulate a human adding a dependency edge via the plan editor: item 2 depends on item 1,
+    // but its status is still 'ready' because the edit happened after plan creation.
+    run.items[1].dependsOn = ['work-1'];
+    run.items[1].status = 'ready';
+    const done = await coordinator.execute(run, team([agent()]));
+    expect(done.status).toBe('completed');
+    // Item 1 runs first; item 2 was demoted to 'blocked' and waited for its prerequisite.
+    expect(order).toEqual(['work-1', 'work-2']);
+    expect(done.items.find(item => item.id === 'work-2')!.status).toBe('done');
   });
 
   test('agent without the work kind fails the run', async () => {
@@ -348,20 +391,32 @@ describe('Coordinator.execute', () => {
     expect(store.rejected[0].type).toBe('run.status');
   });
 
-  test('a storage failure mid-run surfaces without stamping the run or its items failed', async () => {
-    const store = new RejectingEventStore(event => event.type === 'work.started');
+  // A storage failure mid-run cannot leave the run 'running': nothing can resume a running run,
+  // so the bookkeeping failure has to move it to a terminal, resumable state and still surface.
+  test('a storage failure mid-run leaves the run failed and resumable, and still surfaces the error', async () => {
+    let failedOnce = false;
+    const store = new RejectingEventStore(event => {
+      if (event.type !== 'work.started' || failedOnce) return false;
+      failedOnce = true;
+      return true;
+    });
     const ex = executor(() => ({ summary: 'done' }));
     const coordinator = new Coordinator(store, ex.run, ok.run, approval().run);
     const run = await coordinator.create('b', team([agent()]), [{ title: 'A', kind: 'code', agentId: 'builder' }]);
 
     await expect(coordinator.execute(run, team([agent()]))).rejects.toThrow(RunStoreError);
 
-    // The run never got to a verdict, so it is left where it was rather than failed.
-    expect(run.status).toBe('running');
-    expect(run.items.map(item => item.status)).toEqual(['running']);
-    expect(run.messages.some(message => /Run stopped/.test(message.text))).toBe(false);
+    // Terminal and resumable, with the storage error recorded on the run.
+    expect(run.status).toBe('failed');
+    expect(run.items.map(item => item.status)).toEqual(['failed']);
+    expect(run.messages.some(message => message.kind === 'finding' && /could not be saved/.test(message.text))).toBe(true);
     const events = await store.read(run.id);
-    expect(events.some(event => event.type === 'work.finished' && (event.payload as { item?: { status?: string } }).item?.status === 'failed')).toBe(false);
+    expect(events.some(event => event.type === 'run.status' && (event.payload as { status?: string }).status === 'failed')).toBe(true);
+
+    // And the existing resume path picks it up.
+    const resumed = await coordinator.execute(run, team([agent()]));
+    expect(resumed.status).toBe('completed');
+    expect(resumed.items.map(item => item.status)).toEqual(['done']);
   });
 });
 
@@ -398,33 +453,6 @@ describe('review selectors', () => {
     expect(selectCodeReviewer(team([author, named]), 'author')?.id).toBe('reviewer');
     const capable = agent({ id: 'cap', name: 'Cap', rank: 2, kinds: ['code', 'review'] });
     expect(selectCodeReviewer(team([author, capable]), 'author')?.id).toBe('cap');
-  });
-});
-
-describe('FormatAwareReviewer', () => {
-  const item = (kind: WorkItem['kind']): WorkItem => ({ id: 'work-1', title: 'T', kind, agentId: 'builder', dependsOn: [], status: 'running', artifactIds: [] });
-  const run: Run = { id: 'run-1', brief: 'b', status: 'running', teamId: 't', items: [], messages: [], artifacts: [], createdAt: '', updatedAt: '' };
-
-  test('fails closed when no worker is configured', async () => {
-    const code = await new FormatAwareReviewer().review({ run, item: item('code') });
-    expect(code.passed).toBe(false);
-    expect(code.findings.join(' ')).toMatch(/no code review worker/i);
-    const image = await new FormatAwareReviewer().review({ run, item: item('image') });
-    expect(image.passed).toBe(false);
-  });
-
-  test('ties findings to the failing check', async () => {
-    const formatReviewer = new FormatAwareReviewer({ inspect: async () => [{ name: 'secrets-scan', passed: false, detail: 'hardcoded key' }] });
-    const verdict = await formatReviewer.review({ run, item: item('code') });
-    expect(verdict.passed).toBe(false);
-    expect(verdict.findings[0]).toMatch(/secrets-scan.*hardcoded key/);
-  });
-
-  test('empty check list fails closed to a human gate', async () => {
-    const formatReviewer = new FormatAwareReviewer({ inspect: async () => [] });
-    const verdict = await formatReviewer.review({ run, item: item('code') });
-    expect(verdict.passed).toBe(false);
-    expect(verdict.findings.join(' ')).toMatch(/human review is required/);
   });
 });
 
@@ -679,6 +707,23 @@ describe('Coordinator logs post-event state changes', () => {
     expect(rebuilt.changes?.[0]).toMatchObject({ appliedAt: 'applied-at', approvedBy: 'Senior' });
   });
 
+  // The reviewer used to leave its verdict in the message list only, so the log could not say
+  // who reviewed what or what they decided.
+  test('every review verdict reaches the event log', async () => {
+    const store = new MemoryEventStore();
+    const ex = executor(() => ({ summary: 'v' }));
+    const verdict: AutoReviewer = { review: async () => ({ passed: false, findings: ['needs work'], reviewer: 'Senior', gateOnly: true }) };
+    const coordinator = new Coordinator(store, ex.run, verdict, approval().run);
+    const run = await coordinator.create('b', team([coder]), [{ title: 'A', kind: 'code', agentId: 'builder' }]);
+    await coordinator.execute(run, team([coder]));
+    const events = await store.read(run.id);
+    const verdicts = events.filter(event => event.type === 'review.verdict');
+    expect(verdicts).toHaveLength(1);
+    expect(verdicts[0].payload).toMatchObject({ itemId: 'work-1', passed: false, gateOnly: true, reviewer: 'Senior', findings: ['needs work'] });
+    const rebuilt = replayRun(bareRun(run.id), events);
+    expect(rebuilt.messages.some(message => message.text.includes('needs work'))).toBe(true);
+  });
+
   test('a peer-applied change survives its revision cycle applied, not superseded', async () => {
     const store = new MemoryEventStore();
     const ex = executor(() => ({ summary: 'v', changes: [{ path: 'f.ts', before: 'a', after: 'b', createOnly: true }] }));
@@ -889,6 +934,7 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
   // Per-test replies routed by prompt shape: planner, reviewer(s), and builder each read their own knob.
   let planReply: string;
   let builderReply: string;
+  let reviewerReply: string;
 
   beforeAll(() => {
     // model-runner reaches native persistence modules on import; only the coordinator path under test stays real.
@@ -903,7 +949,7 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
           model: 'mock-model',
         });
         if (system.includes(plannerMark)) return finish(planReply);
-        if (system.includes(reviewerMark)) return finish(JSON.stringify({ passed: true, findings: [] }));
+        if (system.includes(reviewerMark)) return finish(reviewerReply);
         if (!system.includes('a member of an AI team') && !system.includes('the visual designer')) throw new Error(`The mock router matched no preamble; update plannerMark/reviewerMark: ${system.slice(0, 60)}`);
         flight.log.push('start');
         await new Promise<void>(resolve => { setTimeout(resolve, 5); });
@@ -920,13 +966,16 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
       readDesignReferenceImage: jest.fn(async () => undefined),
       readProjectText: jest.fn(async () => ''),
       listProjectFiles: jest.fn(async () => []),
-      applyProjectFile: jest.fn(async () => undefined),
+      applyProjectChanges: jest.fn(async (_rootPath: string, changes: any[], persistCallback: () => Promise<void>) => {
+        await persistCallback();
+        return { ok: true, written: changes.map((c: any) => c.path), rolledBack: [], failed: null };
+      }),
       grepProjectText: jest.fn(async () => ''),
       saveGeneratedImage: jest.fn(async () => 'image://saved'),
     }));
   });
 
-  beforeEach(() => { flight.log = []; planReply = JSON.stringify(planSteps); builderReply = JSON.stringify({ summary: 'done' }); jest.clearAllMocks(); });
+  beforeEach(() => { flight.log = []; planReply = JSON.stringify(planSteps); builderReply = JSON.stringify({ summary: 'done' }); reviewerReply = JSON.stringify({ passed: true, findings: [] }); jest.clearAllMocks(); });
 
   function peakInFlight(log: string[]): number {
     let inFlight = 0;
@@ -1113,8 +1162,14 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
       const change = run.changes?.find(candidate => candidate.path === 'src/config.ts');
       expect(change?.appliedAt).toBeTruthy();
       expect(change?.approvedBy).toBe('Lead');
-      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
-      expect(workspace.applyProjectFile).toHaveBeenCalledWith('Z:/gate-demo', 'src/config.ts', '', 'export const port = 8080;\n', true);
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectChanges: jest.Mock };
+      expect(workspace.applyProjectChanges).toHaveBeenCalledTimes(1);
+      expect(workspace.applyProjectChanges.mock.calls[0][0]).toBe('Z:/gate-demo');
+      expect(workspace.applyProjectChanges.mock.calls[0][1]).toHaveLength(1);
+      expect(workspace.applyProjectChanges.mock.calls[0][1][0]).toMatchObject({
+        path: 'src/config.ts', before: '', after: 'export const port = 8080;\n', createOnly: true,
+      });
+      expect(typeof workspace.applyProjectChanges.mock.calls[0][2]).toBe('function');
     });
 
     // The original defect: changeDetails was sliced to 30,000 chars while the apply list was
@@ -1133,25 +1188,107 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
         // under the 80,000 cap that would have made parseAgentResponse drop the whole proposal.
         ].map((_, index) => ({ ..._, content: `export const v = ${index};\n${'// padding line to force a large payload\n'.repeat(550)}` })),
       });
-      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectChanges: jest.Mock };
+      workspace.applyProjectChanges = jest.fn();
       const run = await runGate({ plan: codeStep, builder: fourFiles, reviewCode: true, reviewImages: false });
       // Held for a human rather than applied.
       expect(run.status).toBe('needs-approval');
-      expect(workspace.applyProjectFile).not.toHaveBeenCalled();
+      expect(workspace.applyProjectChanges).not.toHaveBeenCalled();
       expect(run.messages.some(message => message.text.includes('Auto-apply is refused'))).toBe(true);
       // And it names the files that went unreviewed, rather than silently dropping them.
       expect(run.messages.some(message => message.text.includes('Not reviewed:'))).toBe(true);
     });
 
     test('peer apply still proceeds when every proposed file fits the review budget', async () => {
-      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectChanges: jest.Mock };
+      workspace.applyProjectChanges = jest.fn().mockImplementation(async (_rootPath: string, changes: any[], persistCallback: () => Promise<void>) => {
+        await persistCallback();
+        return { ok: true, written: changes.map(c => c.path), rolledBack: [], failed: null };
+      });
       const run = await runGate({ plan: codeStep, builder: cleanProposal, reviewCode: true, reviewImages: false });
       expect(run.status).toBe('completed');
-      expect(workspace.applyProjectFile).toHaveBeenCalledTimes(1);
+      expect(workspace.applyProjectChanges).toHaveBeenCalledTimes(1);
+    });
+
+    // Clipping is the same defect as omission: the file was shown, but not all of it. A reviewer
+    // that never saw the whole file cannot approve it, so auto-apply has to refuse.
+    test('peer apply refuses when a proposed file was clipped, even though the file was shown', async () => {
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectChanges: jest.Mock };
+      workspace.applyProjectChanges = jest.fn();
+      const huge = JSON.stringify({
+        summary: 'Added one big module.',
+        messages: [{ to: 'team', kind: 'handoff', text: 'Big module staged for review.' }],
+        changes: [{ path: 'src/big.ts', content: `export const v = 1;\n${'// padding line\n'.repeat(2500)}` }],
+      });
+      const run = await runGate({ plan: codeStep, builder: huge, reviewCode: true, reviewImages: false });
+      expect(run.status).toBe('needs-approval');
+      expect(run.items[0].status).toBe('needs-approval');
+      expect(workspace.applyProjectChanges).not.toHaveBeenCalled();
+      // The finding says the reviewer could not see the whole proposal.
+      expect(run.messages.some(message => message.text.includes('could not see the whole proposal'))).toBe(true);
+      expect(run.messages.some(message => message.text.includes('src/big.ts'))).toBe(true);
+    });
+
+    // A reviewer that answers with prose used to throw out of the review and fail the whole run.
+    test('a malformed reviewer reply gates the item instead of failing the run', async () => {
+      reviewerReply = 'Looks good to me! {not json at all}';
+      const run = await runGate({ plan: codeStep, builder: cleanProposal, reviewCode: true, reviewImages: false });
+      expect(run.status).toBe('needs-approval');
+      expect(run.items[0].status).toBe('needs-approval');
+      expect(run.messages.some(message => message.text.includes('could not parse the reviewer response'))).toBe(true);
+    });
+
+    // A hung endpoint used to hang the run forever. It now ends as a stated timeout.
+    test('a hung reviewer is reported as a timeout and held for a human', async () => {
+      const provider = jest.requireMock('../src/providers/openai-compatible') as { completeChat: jest.Mock };
+      provider.completeChat.mockImplementationOnce(() => new Promise(() => {}));
+      const modelRunner = require('../src/orchestration/model-runner') as typeof import('../src/orchestration/model-runner');
+      const run: Run = {
+        id: 'run-1', brief: 'Ship the feature.', status: 'running', teamId: 'gate-team',
+        items: [{ id: 'work-1', title: 'Add the config file', kind: 'code', agentId: 'builder', dependsOn: [], status: 'running', artifactIds: [] }],
+        messages: [], artifacts: [],
+        changes: [{ id: 'change-1', itemId: 'work-1', path: 'src/config.ts', before: '', after: 'export const port = 8080;\n', createOnly: true, createdBy: 'Builder', attempt: 1 }],
+        createdAt: 't0', updatedAt: 't0',
+      };
+      const verdict = await new modelRunner.ModelRunReviewer(gateProfile, team([agent(), agent({ id: 'reviewer', name: 'Lead', rank: 5, kinds: ['code', 'review'] })]), true, false, 'Z:/gate-demo', gatePlugins, true, 20).review({ run, item: run.items[0] });
+      expect(verdict.passed).toBe(false);
+      expect(verdict.findings.join(' ')).toMatch(/timed out/i);
+      expect(verdict.gateOnly).toBe(true);
+    });
+
+    // The staged map used to survive a revision, so the old bytes beat the revised proposal.
+    test('a revision replaces the staged content of the previous attempt', async () => {
+      const provider = jest.requireMock('../src/providers/openai-compatible') as { completeChat: jest.Mock };
+      const finish = (content: string) => ({ content, usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, basis: 'exact' as const }, model: 'mock-model' });
+      provider.completeChat
+        .mockImplementationOnce(async () => finish(JSON.stringify({ toolCalls: [{ name: 'write', path: 'src/a.ts', content: 'OLD' }] })))
+        .mockImplementationOnce(async () => finish(JSON.stringify({ summary: 'staged a file', messages: [] })))
+        .mockImplementationOnce(async () => finish(JSON.stringify({ summary: 'revised', messages: [], changes: [{ path: 'src/a.ts', content: 'NEW' }] })));
+      const modelRunner = require('../src/orchestration/model-runner') as typeof import('../src/orchestration/model-runner');
+      const runner = new modelRunner.ModelAgentExecutor(gateProfile, 'Z:/gate-demo', { workspaceFiles: true, imageGeneration: false, codeReview: false, visualReview: false });
+      const step: WorkItem = { id: 'work-1', title: 'Add a module', kind: 'code', agentId: 'builder', dependsOn: [], status: 'running', artifactIds: [] };
+      const teamForStep = team([agent()]);
+      const first = await runner.execute({ runId: 'run-staged', brief: 'Ship it', step, team: teamForStep, priorMessages: [], attempt: 1 }) as AgentResult;
+      expect(first.changes?.map(change => change.after)).toEqual(['OLD']);
+      const second = await runner.execute({ runId: 'run-staged', brief: 'Ship it', step, team: teamForStep, priorMessages: [], attempt: 2 }) as AgentResult;
+      expect(second.changes?.map(change => change.after)).toEqual(['NEW']);
+    });
+
+    // A broken tool-call reply used to look like an agent that never asked for a tool.
+    test('a broken tool-call reply is surfaced instead of looking like no tools', async () => {
+      const provider = jest.requireMock('../src/providers/openai-compatible') as { completeChat: jest.Mock };
+      const finish = (content: string) => ({ content, usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, basis: 'exact' as const }, model: 'mock-model' });
+      provider.completeChat.mockImplementationOnce(async () => finish('I will read the file: {"toolCalls":[{"name":"read",]'));
+      const modelRunner = require('../src/orchestration/model-runner') as typeof import('../src/orchestration/model-runner');
+      const runner = new modelRunner.ModelAgentExecutor(gateProfile, 'Z:/gate-demo', { workspaceFiles: true, imageGeneration: false, codeReview: false, visualReview: false });
+      const step: WorkItem = { id: 'work-1', title: 'Read a file', kind: 'code', agentId: 'builder', dependsOn: [], status: 'running', artifactIds: [] };
+      const result = await runner.execute({ runId: 'run-broken-tools', brief: 'Ship it', step, team: team([agent()]), priorMessages: [], attempt: 1 });
+      expect(result.messages?.some(message => message.kind === 'finding' && /could not be parsed/.test(message.text))).toBe(true);
     });
 
     test('a later review of the same item skips an already-applied change instead of re-applying it', async () => {
-      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectChanges: jest.Mock };
+      workspace.applyProjectChanges = jest.fn();
       const modelRunner = require('../src/orchestration/model-runner') as typeof import('../src/orchestration/model-runner');
       // A peer-applied attempt-1 change re-presented beside a fresh attempt-2 proposal, as the revision cycle leaves it.
       const run: Run = {
@@ -1164,40 +1301,49 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
         ],
         createdAt: 't0', updatedAt: 't0',
       };
+      workspace.applyProjectChanges.mockImplementation(async (_rootPath: string, changes: any[], persistCallback: () => Promise<void>) => {
+        await persistCallback();
+        return { ok: true, written: changes.map(c => c.path), rolledBack: [], failed: null };
+      });
       const verdict = await new modelRunner.ModelRunReviewer(gateProfile, team([agent(), agent({ id: 'reviewer', name: 'Lead', rank: 5, kinds: ['code', 'review'] })]), true, false, 'Z:/gate-demo', gatePlugins, true).review({ run, item: run.items[0] });
       expect(verdict.passed).toBe(true);
-      // Only the fresh proposal reaches the apply path: no second applyProjectFile call for the applied change.
-      expect(workspace.applyProjectFile).toHaveBeenCalledTimes(1);
-      expect(workspace.applyProjectFile).toHaveBeenCalledWith('Z:/gate-demo', 'src/two.ts', '', 'export const two = 2;\n', true);
+      // Only the fresh proposal reaches the apply path: no second applyProjectChanges call for the applied change.
+      expect(workspace.applyProjectChanges).toHaveBeenCalledTimes(1);
+      expect(workspace.applyProjectChanges.mock.calls[0][1]).toHaveLength(1);
+      expect(workspace.applyProjectChanges.mock.calls[0][1][0].path).toBe('src/two.ts');
       // Its original stamp and approver stand: no duplicate appliedAt stamp on a re-presented change.
       expect(run.changes?.find(change => change.id === 'change-1')).toMatchObject({ appliedAt: 'applied-earlier', approvedBy: 'Lead' });
       expect(run.changes?.find(change => change.id === 'change-2')?.appliedAt).toBeTruthy();
     });
 
     test('peer approval without a project folder refuses to apply and holds the item for a human', async () => {
-      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectChanges: jest.Mock };
+      workspace.applyProjectChanges = jest.fn();
       const run = await runGate({ plan: codeStep, builder: cleanProposal, reviewCode: true, reviewImages: false, projectRoot: '' });
       expect(run.status).toBe('needs-approval');
       expect(run.items[0].status).toBe('needs-approval');
       expect(run.changes?.every(change => !change.appliedAt)).toBe(true);
-      expect(workspace.applyProjectFile).not.toHaveBeenCalled();
+      expect(workspace.applyProjectChanges).not.toHaveBeenCalled();
       // The reviewer's refusal finding reaches the human through the revision-request message.
-      expect(run.messages.some(message => message.text.includes('no project folder is available to apply it'))).toBe(true);
+      expect(run.messages.some(message => message.text.includes('choose a project folder first'))).toBe(true);
     });
 
-    test('a mid-batch apply failure reports the files already applied and holds the rest for a human', async () => {
-      const workspace = require('../src/persistence/workspaceProject') as { applyProjectFile: jest.Mock };
-      workspace.applyProjectFile.mockImplementation(async (_root: string, path: string) => { if (path === 'src/two.ts') throw new Error('The project file is locked by another process.'); });
+    test('a mid-batch apply failure rolls back every file and holds the rest for a human', async () => {
+      const workspace = require('../src/persistence/workspaceProject') as { applyProjectChanges: jest.Mock };
+      workspace.applyProjectChanges = jest.fn();
+      workspace.applyProjectChanges.mockImplementation(async (_rootPath: string, changes: any[], _persistCallback: () => Promise<void>) => {
+        return { ok: false, written: [changes[0].path], rolledBack: [changes[0].path], failed: { path: changes[1].path, message: 'The project file is locked by another process.' } };
+      });
       try {
         const builder = JSON.stringify({ summary: 'Added both settings.', messages: [{ to: 'team', kind: 'handoff', text: 'Config staged for review.' }], changes: [{ path: 'src/one.ts', content: 'export const one = 1;\n' }, { path: 'src/two.ts', content: 'export const two = 2;\n' }] });
         const run = await runGate({ plan: codeStep, builder, reviewCode: true, reviewImages: false });
         expect(run.status).toBe('needs-approval');
         expect(run.items[0].status).toBe('needs-approval');
-        expect(run.changes?.some(change => change.path === 'src/one.ts' && change.appliedAt)).toBe(true);
-        expect(run.changes?.some(change => change.path === 'src/two.ts' && change.appliedAt)).toBe(false);
-        expect(run.messages.some(message => message.from === 'Lead' && message.text.includes('could not be safely applied') && message.text.includes('These earlier files were applied: src/one.ts'))).toBe(true);
+        // Atomic rollback: neither change kept its appliedAt stamp.
+        expect(run.changes?.every(change => !change.appliedAt)).toBe(true);
+        expect(run.messages.some(message => message.from === 'Lead' && message.text.includes('could not be safely applied') && message.text.includes('rolled back'))).toBe(true);
       } finally {
-        workspace.applyProjectFile.mockImplementation(async () => undefined);
+        workspace.applyProjectChanges.mockImplementation(async () => ({ ok: true, written: [], rolledBack: [], failed: null }));
       }
     });
 
@@ -1211,7 +1357,7 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
   });
 
   // The policy is stamped onto the run at plan time, and the coordinator reads it from the run, so an approve-time
-  // flip has to reach executePlannedRun and land on the run — exactly like maxConcurrency above.
+  // flip has to reach executePlannedRun and land on the run â€” exactly like maxConcurrency above.
   describe('checkpointPolicy flipping across the approve boundary', () => {
     const chainSteps = { steps: [
       { title: 'Step 1', kind: 'code', agentId: 'builder' },
@@ -1267,5 +1413,212 @@ describe('RunInput maxConcurrency threading into the Coordinator', () => {
       expect(run.status).toBe('needs-approval');
       expect(run.checkpointPaused).toBe(true);
     });
+  });
+});
+
+describe('the workspace tool executor', () => {
+  type WorkspaceMock = { listProjectFiles: jest.Mock; readProjectText: jest.Mock; grepProjectText: jest.Mock };
+  let workspace: WorkspaceMock;
+  let runWorkspaceTool: typeof import('../src/orchestration/workspaceExecutor').runWorkspaceTool;
+
+  beforeAll(() => {
+    workspace = require('../src/persistence/workspaceProject') as WorkspaceMock;
+    ({ runWorkspaceTool } = require('../src/orchestration/workspaceExecutor') as typeof import('../src/orchestration/workspaceExecutor'));
+  });
+
+  beforeEach(() => {
+    workspace.listProjectFiles.mockReset().mockResolvedValue([]);
+    workspace.readProjectText.mockReset().mockResolvedValue('');
+    workspace.grepProjectText.mockReset().mockResolvedValue([]);
+  });
+
+  const writer = agent({ id: 'writer', name: 'Writer' });
+  const staged = () => new Map<string, StagedWorkspaceFile>();
+
+  test('list returns the project entries and the staged additions', async () => {
+    workspace.listProjectFiles.mockResolvedValue([{ name: 'a.ts', relativePath: 'src/a.ts', type: 'file', size: 12 }]);
+    const files = staged();
+    files.set('src/new.ts', { path: 'src/new.ts', before: '', after: 'new', createOnly: true, owner: 'writer', itemId: 'work-1' });
+    const result = await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'list', path: 'src' }, files);
+    expect(result).toEqual([
+      { name: 'a.ts', relativePath: 'src/a.ts', type: 'file', size: 12 },
+      { name: 'new.ts', relativePath: 'src/new.ts', type: 'file', size: 3 },
+    ]);
+  });
+
+  test('read returns the staged content when the file is staged, and the file otherwise', async () => {
+    workspace.readProjectText.mockResolvedValue('FROM DISK');
+    const files = staged();
+    files.set('src/a.ts', { path: 'src/a.ts', before: 'OLD', after: 'STAGED', createOnly: false, owner: 'writer', itemId: 'work-1' });
+    expect(await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'read', path: 'src/a.ts' }, files)).toBe('STAGED');
+    expect(await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'read', path: 'src/b.ts' }, files)).toBe('FROM DISK');
+  });
+
+  test('grep searches the staged files and leaves the staged paths to the staged copy', async () => {
+    workspace.grepProjectText.mockResolvedValue([{ path: 'src/a.ts', line: 1, text: 'hit' }]);
+    const files = staged();
+    files.set('src/a.ts', { path: 'src/a.ts', before: '', after: 'staged hit', createOnly: true, owner: 'writer', itemId: 'work-1' });
+    files.set('src/b.ts', { path: 'src/b.ts', before: '', after: 'other staged hit', createOnly: true, owner: 'writer', itemId: 'work-1' });
+    const result = await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'grep', path: '', query: 'hit' }, files) as { path: string; line: number; text: string }[];
+    expect(result).toEqual([
+      { path: 'src/a.ts', line: 1, text: 'staged hit' },
+      { path: 'src/b.ts', line: 1, text: 'other staged hit' },
+    ]);
+  });
+
+  test('write stages a new file and refuses to overwrite an existing one', async () => {
+    const files = staged();
+    const result = await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'src/new.ts', content: 'hello' }, files);
+    expect(result).toEqual({ staged: true, path: 'src/new.ts', characters: 5 });
+    expect(files.get('src/new.ts')).toMatchObject({ after: 'hello', before: '', createOnly: true, owner: 'writer', itemId: 'work-1' });
+    // Writing the same staged file again updates the staged copy.
+    expect(await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'src/new.ts', content: 'again' }, files)).toEqual({ staged: true, path: 'src/new.ts', characters: 5, updated: true });
+    // A file that already exists on disk is never overwritten by a write.
+    workspace.listProjectFiles.mockResolvedValue([{ name: 'existing.ts', relativePath: 'src/existing.ts', type: 'file', size: 5 }]);
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'src/existing.ts', content: 'again' }, files)).rejects.toThrow(/already exists/);
+  });
+
+  test('write refuses empty and oversized content', async () => {
+    const files = staged();
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'src/a.ts', content: '' }, files)).rejects.toThrow(/1 to 80,000/);
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'src/a.ts', content: 'x'.repeat(80001) }, files)).rejects.toThrow(/1 to 80,000/);
+  });
+
+  test('edit replaces one exact match and stages the result', async () => {
+    const files = staged();
+    workspace.readProjectText.mockResolvedValue('alpha beta alpha');
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'edit', path: 'src/a.ts', find: 'alpha', replace: 'gamma' }, files)).rejects.toThrow(/appear once/);
+    workspace.readProjectText.mockResolvedValue('alpha beta');
+    const result = await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'edit', path: 'src/a.ts', find: 'beta', replace: 'gamma' }, files);
+    expect(result).toEqual({ staged: true, path: 'src/a.ts', replacedCharacters: 4, newFileCharacters: 11 });
+    expect(files.get('src/a.ts')?.after).toBe('alpha gamma');
+  });
+
+  test('paths are normalised, and traversal or absolute paths are refused', async () => {
+    const files = staged();
+    await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'src\\deep\\a.ts', content: 'x' }, files);
+    expect([...files.keys()]).toEqual(['src/deep/a.ts']);
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: '../outside.ts', content: 'x' }, files)).rejects.toThrow(/parent traversal/);
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'C:/outside.ts', content: 'x' }, files)).rejects.toThrow(/parent traversal/);
+  });
+
+  test("another agent's staged file cannot be overwritten, but can be read", async () => {
+    const files = staged();
+    files.set('src/a.ts', { path: 'src/a.ts', before: '', after: 'theirs', createOnly: true, owner: 'other', itemId: 'work-2' });
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'write', path: 'src/a.ts', content: 'mine' }, files)).rejects.toThrow(/Another agent already staged/);
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'edit', path: 'src/a.ts', find: 'theirs', replace: 'mine' }, files)).rejects.toThrow(/Another agent already staged/);
+    expect(await runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'read', path: 'src/a.ts' }, files)).toBe('theirs');
+  });
+
+  test('an unknown tool or a missing permission is refused', async () => {
+    const files = staged();
+    await expect(runWorkspaceTool('Z:/demo', writer, 'work-1', { name: 'delete', path: 'src/a.ts' }, files)).rejects.toThrow(/Unknown workspace tool/);
+    const reader = agent({ id: 'reader', name: 'Reader', permissions: { read: true, grep: false, write: false, edit: false } });
+    await expect(runWorkspaceTool('Z:/demo', reader, 'work-1', { name: 'write', path: 'src/a.ts', content: 'x' }, files)).rejects.toThrow(/Write permission is off/);
+  });
+});
+
+describe('tool-call parsing', () => {
+  test('reads the calls out of a reply', () => {
+    const parsed = parseToolCalls('{"toolCalls":[{"name":"read","path":"src/a.ts"},{"name":"write","path":"src/b.ts","content":"x"}]}');
+    expect(parsed.kind).toBe('calls');
+    expect(parsed.kind === 'calls' ? parsed.calls.map(call => call.name) : []).toEqual(['read', 'write']);
+  });
+
+  test('a reply with no tool calls is not a failure', () => {
+    expect(parseToolCalls('{"summary":"done","messages":[]}').kind).toBe('none');
+    expect(parseToolCalls('just prose').kind).toBe('none');
+  });
+
+  test('a broken tool-call reply is reported as broken, not as no tools', () => {
+    const parsed = parseToolCalls('I will read the file: {"toolCalls":[{"name":"read",]');
+    expect(parsed.kind).toBe('invalid');
+  });
+
+  test('prose around the JSON does not break the parse', () => {
+    const parsed = parseToolCalls('Here you go:\n{"toolCalls":[{"name":"read","path":"a.ts"}]}\nDone.');
+    expect(parsed.kind).toBe('calls');
+    expect(parsed.kind === 'calls' ? parsed.calls.length : 0).toBe(1);
+  });
+
+  test('rejects a batch containing an unnamed call; a fully named batch is capped at six', () => {
+    const malformed = parseToolCalls(JSON.stringify({ toolCalls: [{ path: 'x' }, ...Array.from({ length: 9 }, (_, index) => ({ name: 'read', path: `a${index}.ts` }))] }));
+    expect(malformed.kind).toBe('invalid');
+    const valid = parseToolCalls(JSON.stringify({ toolCalls: Array.from({ length: 9 }, (_) => ({ name: 'list' })) }));
+    expect(valid.kind === 'calls' ? valid.calls.length : 0).toBe(6);
+    expect(valid.kind === 'calls' ? valid.calls.every(call => typeof call.name === 'string') : true).toBe(true);
+  });
+});
+
+describe('planner reply parsing', () => {
+  const roster = team([agent({ id: 'builder', name: 'Builder' }), agent({ id: 'painter', name: 'Painter', kinds: ['image'] })]);
+  function parse(reply: string): ReturnType<typeof import('../src/orchestration/planner').parsePlanReply> {
+    const planner = require('../src/orchestration/planner') as typeof import('../src/orchestration/planner');
+    return planner.parsePlanReply(reply, roster);
+  }
+
+  test('accepts a well formed plan', () => {
+    expect(parse('{"steps":[{"title":"Build it","kind":"code","agentId":"builder","dependsOn":[]}]}')).toEqual([{ title: 'Build it', kind: 'code', agentId: 'builder', dependsOn: [] }]);
+  });
+
+  test('rejects prose with no plan at all', () => {
+    expect(() => parse('I cannot help with that.')).toThrow(/did not return a structured plan/);
+  });
+
+  test('rejects a plan whose steps are not a list', () => {
+    expect(() => parse('{"steps":"nope"}')).toThrow(/returned an invalid plan/);
+  });
+
+  test('rejects a step that names an agent outside the team', () => {
+    expect(() => parse('{"steps":[{"title":"X","kind":"code","agentId":"stranger"}]}')).toThrow(/unsupported task in step 1/);
+  });
+
+  test('rejects a step the named agent cannot do', () => {
+    expect(() => parse('{"steps":[{"title":"X","kind":"image","agentId":"builder"}]}')).toThrow(/unsupported task in step 1/);
+  });
+
+  test('rejects a dependency that points forward', () => {
+    expect(() => parse('{"steps":[{"title":"A","kind":"code","agentId":"builder"},{"title":"B","kind":"code","agentId":"builder","dependsOn":[1]}]}')).toThrow(/invalid dependency in step 2/);
+  });
+
+  test('rejects a malformed step', () => {
+    expect(() => parse('{"steps":["nope"]}')).toThrow(/invalid step/);
+  });
+});
+
+describe('request deadlines', () => {
+  test('a call that never answers ends as a timeout', async () => {
+    await expect(withDeadline(undefined, 20, () => new Promise(() => {}))).rejects.toThrow(RequestTimeoutError);
+  });
+
+  test('the timeout says how long it waited', async () => {
+    await expect(withDeadline(undefined, 20, () => new Promise(() => {}))).rejects.toThrow(/timed out after/);
+  });
+
+  test("the user's cancel still aborts the call", async () => {
+    const controller = new AbortController();
+    const pending = withDeadline(controller.signal, 5000, signal => new Promise((_, reject) => {
+      signal.addEventListener('abort', () => { const error = new Error('aborted by the user'); error.name = 'AbortError'; reject(error); });
+    }));
+    controller.abort();
+    await expect(pending).rejects.toThrow(/aborted by the user/);
+  });
+
+  test('a call that answers in time passes through', async () => {
+    await expect(withDeadline(undefined, 1000, async () => 'done')).resolves.toBe('done');
+  });
+});
+
+describe('human decisions', () => {
+  test('a human decision is written to the run log and rebuilt on replay', async () => {
+    const store = new MemoryEventStore();
+    const run: Run = { id: 'run-1', brief: 'b', status: 'completed', teamId: 't', items: [], messages: [], artifacts: [], changes: [], createdAt: 't0', updatedAt: 't0' };
+    await recordHumanDecision(store, run, { action: 'apply', changeId: 'change-1', path: 'src/a.ts', by: 'You' });
+    const events = await store.read('run-1');
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe('human.decision');
+    expect(events[0].payload).toMatchObject({ action: 'apply', changeId: 'change-1', path: 'src/a.ts', by: 'You' });
+    const rebuilt = replayRun(run, events);
+    expect(rebuilt.messages.some(message => message.text.includes('applied src/a.ts'))).toBe(true);
   });
 });

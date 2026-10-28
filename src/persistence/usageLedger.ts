@@ -1,11 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ProviderUsage, UsageBasis } from '../providers/openai-compatible';
+import { CorruptStorageError, StorageRead, preserveReadableSlot, readJsonSlot } from './storageSafety';
 
 // Deliberately namespaced away from `dispatch.run.*`. runStore.saveRunSnapshot evicts the
 // run index at 30 and removesItem's both the snapshot and the event log
 // (runStore.ts:40-44). Nothing run-scoped may own this ledger, or totals silently vanish at
 // run #31. Rows reference runId; nothing deletes them by run.
 const USAGE_KEY = 'dispatch.usage.v1';
+const USAGE_SUMMARY_KEY = 'dispatch.usage.summary.v1';
+
+// Retention rule, in one place: rows older than the window are folded into a summary row
+// and dropped from the ledger, and the ledger never holds more than USAGE_MAX_ROWS rows.
+export const USAGE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+export const USAGE_MAX_ROWS = 2000;
 
 let queue: Promise<unknown> = Promise.resolve();
 function serialize<T>(work: () => Promise<T>): Promise<T> {
@@ -39,16 +46,22 @@ export type UsageTotals = {
   callCount: number;
 };
 
+// The totals of the rows the retention window has already folded away.
+export type UsageSummary = UsageTotals & { rows: number; oldestAt: number; newestAt: number };
+
 export function recordUsage(record: Omit<UsageRecord, 'at'> & { at?: number }): Promise<UsageRecord> {
   return serialize(async () => {
     const saved: UsageRecord = { ...record, at: record.at ?? Date.now() };
     try {
-      const records = JSON.parse(await AsyncStorage.getItem(USAGE_KEY) ?? '[]') as UsageRecord[];
-      records.push(saved);
-      // ponytail: unbounded append-only, so each call rewrites the whole array. Fine at this
-      // scale (a run is roughly 5-50 calls). If write latency is ever measured growing with
-      // usage, add a retention window here. Never reuse the 30-run cap: that one deletes.
-      await AsyncStorage.setItem(USAGE_KEY, JSON.stringify(records));
+      const stored = await readUsageSlot();
+      // A corrupt ledger is quarantined by the read, so the next row starts a clean ledger
+      // instead of every later write failing against the same broken value.
+      const rows = stored.status === 'corrupt' ? [] : stored.value;
+      rows.push(saved);
+      const { kept, dropped } = applyRetention(rows, saved.at);
+      await preserveReadableSlot(USAGE_KEY);
+      await AsyncStorage.setItem(USAGE_KEY, JSON.stringify(kept));
+      if (dropped.length) await foldSummary(dropped);
     } catch {
       // Accounting is best-effort and must never fail a run that already happened. The
       // count goes missing, not wrong; the run is still real.
@@ -57,10 +70,22 @@ export function recordUsage(record: Omit<UsageRecord, 'at'> & { at?: number }): 
   });
 }
 
+/** Reads the ledger with its corruption status, so "no usage yet" can be told from "lost usage". */
+export function readUsageResult(): Promise<StorageRead<UsageRecord[]>> {
+  return serialize(readUsageSlot);
+}
+
 export function readUsage(): Promise<UsageRecord[]> {
   // Unlike recordUsage, a failed read propagates: the usage screen must be able to say
   // "could not read" rather than showing a confident empty state over lost data.
-  return serialize(async () => parseUsageRecords(JSON.parse(await AsyncStorage.getItem(USAGE_KEY) ?? '[]')));
+  return serialize(async () => (await readUsageSlot()).value);
+}
+
+async function readUsageSlot(): Promise<StorageRead<UsageRecord[]>> {
+  return readJsonSlot<UsageRecord[]>(USAGE_KEY, raw => {
+    if (!Array.isArray(raw)) throw new CorruptStorageError('the usage ledger is not a list');
+    return parseUsageRecords(raw);
+  }, []);
 }
 
 // A single malformed row must never be able to poison the whole screen. Without this, a
@@ -84,10 +109,56 @@ export function parseUsageRecords(raw: unknown): UsageRecord[] {
   return Array.isArray(raw) ? raw.filter(isUsageRecord) : [];
 }
 
+/** Splits the rows into the ones the window keeps and the ones it folds into the summary. */
+function applyRetention(rows: UsageRecord[], now: number): { kept: UsageRecord[]; dropped: UsageRecord[] } {
+  const cutoff = now - USAGE_RETENTION_MS;
+  const kept: UsageRecord[] = [];
+  const dropped: UsageRecord[] = [];
+  for (const row of rows) (row.at >= cutoff ? kept : dropped).push(row);
+  if (kept.length > USAGE_MAX_ROWS) dropped.push(...kept.splice(0, kept.length - USAGE_MAX_ROWS));
+  return { kept, dropped };
+}
+
+async function foldSummary(rows: UsageRecord[]): Promise<void> {
+  const existing = await foldSummarySlot();
+  const totals = rollUpUsage(rows);
+  const times = rows.map(row => row.at);
+  const summary: UsageSummary = {
+    exact: existing.value.exact + totals.exact,
+    estimated: existing.value.estimated + totals.estimated,
+    callCount: existing.value.callCount + totals.callCount,
+    rows: existing.value.rows + rows.length,
+    oldestAt: times.length ? Math.min(existing.value.oldestAt || times[0], ...times) : existing.value.oldestAt,
+    newestAt: times.length ? Math.max(existing.value.newestAt, ...times) : existing.value.newestAt,
+  };
+  await AsyncStorage.setItem(USAGE_SUMMARY_KEY, JSON.stringify(summary));
+}
+
+/** The totals of the rows the retention window has already folded away. */
+export function readUsageSummary(): Promise<UsageSummary> {
+  return serialize(async () => (await foldSummarySlot()).value);
+}
+
+async function foldSummarySlot(): Promise<StorageRead<UsageSummary>> {
+  return readJsonSlot<UsageSummary>(USAGE_SUMMARY_KEY, raw => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CorruptStorageError('the usage summary is not an object');
+    const value = raw as Partial<UsageSummary>;
+    return {
+      exact: typeof value.exact === 'number' ? value.exact : 0,
+      estimated: typeof value.estimated === 'number' ? value.estimated : 0,
+      callCount: typeof value.callCount === 'number' ? value.callCount : 0,
+      rows: typeof value.rows === 'number' ? value.rows : 0,
+      oldestAt: typeof value.oldestAt === 'number' ? value.oldestAt : 0,
+      newestAt: typeof value.newestAt === 'number' ? value.newestAt : 0,
+    };
+  }, { exact: 0, estimated: 0, callCount: 0, rows: 0, oldestAt: 0, newestAt: 0 });
+}
+
 export function clearUsage(): Promise<void> {
   return serialize(async () => {
     try {
       await AsyncStorage.removeItem(USAGE_KEY);
+      await AsyncStorage.removeItem(USAGE_SUMMARY_KEY);
     } catch {
       // Best-effort, same reason as recordUsage.
     }

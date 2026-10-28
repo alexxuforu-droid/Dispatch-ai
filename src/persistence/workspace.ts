@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AgentPermissions, RunMission } from '../orchestration/types';
+import { CorruptStorageError, StorageRead, preserveReadableSlot, readJsonSlot } from './storageSafety';
 
 export type BuiltinPluginFlags = { workspaceFiles: boolean; imageGeneration: boolean; codeReview: boolean; visualReview: boolean };
 export type DispatchWorkflow = { id: string; name: string; description: string; brief: string; teamId?: string; mission?: RunMission };
@@ -58,13 +59,21 @@ export const defaultWorkspaceSettings: WorkspaceSettings = {
 };
 
 export async function loadWorkspaceSettings(): Promise<WorkspaceSettings> {
-  const raw = await AsyncStorage.getItem(SETTINGS_KEY);
-  if (!raw) return defaultWorkspaceSettings;
-  try {
-    return readWorkspaceSettings(JSON.parse(raw));
-  } catch {
-    return defaultWorkspaceSettings;
-  }
+  return (await loadWorkspaceSettingsResult()).value;
+}
+
+/**
+ * Reads the settings with their corruption status. `empty` is a first run; `corrupt` means the
+ * stored blob could not be read and has been kept aside under `quarantineKey`, so the auto-save
+ * that follows cannot destroy it.
+ */
+export async function loadWorkspaceSettingsResult(): Promise<StorageRead<WorkspaceSettings>> {
+  return readJsonSlot<WorkspaceSettings>(SETTINGS_KEY, raw => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new CorruptStorageError('the workspace settings are not an object');
+    const version = (raw as { version?: unknown }).version;
+    if (version !== 1 && version !== 2 && version !== 3 && version !== 4) throw new CorruptStorageError(`unsupported settings version ${String(version)}`);
+    return readWorkspaceSettings(raw);
+  }, defaultWorkspaceSettings);
 }
 
 /** Pure reader for a parsed settings blob. Split out of loadWorkspaceSettings so the migration rules are testable without storage. */
@@ -138,6 +147,11 @@ export function readWorkspaceSettings(raw: unknown): WorkspaceSettings {
 let writeQueue: Promise<void> = Promise.resolve();
 export function saveWorkspaceSettings(settings: WorkspaceSettings): Promise<void> {
   const serialized = JSON.stringify(settings);
-  writeQueue = writeQueue.catch(() => undefined).then(() => AsyncStorage.setItem(SETTINGS_KEY, serialized));
+  // A settings blob that cannot be read is kept aside before it is replaced, so the
+  // auto-save that follows a failed load cannot destroy the teams and workflows in it.
+  writeQueue = writeQueue.catch(() => undefined).then(async () => {
+    await preserveReadableSlot(SETTINGS_KEY);
+    await AsyncStorage.setItem(SETTINGS_KEY, serialized);
+  });
   return writeQueue;
 }

@@ -128,4 +128,17 @@ describe('diffLines', () => {
     const result = diffLines('keep\ndrop', 'keep\nkeep-again');
     expect(result.lines.filter(line => line.kind === 'context').map(line => line.text)).toEqual(['keep']);
   });
+
+  // A Windows file and its LF twin are the same file to a reviewer. Without this, every line
+  // differed and the whole file showed as rewritten.
+  it('treats a CRLF file and its LF twin as identical', () => {
+    const result = diffLines('alpha\r\nbeta\r\ngamma\r\n', 'alpha\nbeta\ngamma\n');
+    expect(result).toEqual({ identical: true, added: 0, removed: 0, truncated: false, lines: [] });
+  });
+
+  it('still finds a real change in a CRLF file', () => {
+    const result = diffLines('alpha\r\nbeta\r\n', 'alpha\r\nBETA\r\n');
+    expect(result).toMatchObject({ identical: false, added: 1, removed: 1 });
+    expect(shaped(result)).toEqual(['context:alpha', 'remove:beta', 'add:BETA']);
+  });
 });

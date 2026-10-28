@@ -1,0 +1,79 @@
+name: verify
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Verify (typecheck, native spec, lint, tests)
+        run: npm run verify
+
+  # The native half of the app is C++ and has its own way of failing: a TurboModule spec that
+  # no longer matches the C++ module behind it compiles and then crashes at runtime. This job
+  # builds the native app with the spec regenerated from the TypeScript, so the build itself
+  # proves the two halves agree.
+  native-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Install
+        run: npm ci
+
+      - name: Find the pinned MSVC toolset
+        id: toolset
+        shell: pwsh
+        run: |
+          $roots = @("$env:ProgramFiles(x86)\Microsoft Visual Studio", "$env:ProgramFiles\Microsoft Visual Studio")
+          $props = Get-ChildItem -Path $roots -Recurse -Filter Toolset.props -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'PlatformToolsets\\v145\\Toolset.props$' } | Select-Object -First 1
+          if ($props) { 'found=true' >> $env:GITHUB_OUTPUT } else { 'found=false' >> $env:GITHUB_OUTPUT }
+          $sdk = Get-ChildItem -Path "$env:ProgramFiles(x86)\Windows Kits\10\Include" -Directory -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Name
+          "sdk=$($sdk -join ',')" >> $env:GITHUB_OUTPUT
+
+      - name: Build the native app with the spec regenerated
+        if: steps.toolset.outputs.found == 'true'
+        run: >
+          msbuild windows\DispatchNative.sln /restore /m:1 /nodeReuse:false
+          /p:Configuration=Debug /p:Platform=x64
+          /p:RunCodegenWindows=true /p:CodegenCommand=npm /p:CodegenCommandArgs="run codegen"
+
+      # The project pins PlatformToolset v145. When the runner does not have it, the build is
+      # not attempted and the reason is written into the run summary instead of being swallowed
+      # by a continue-on-error step.
+      - name: Record why the native build did not run
+        if: steps.toolset.outputs.found != 'true'
+        shell: pwsh
+        env:
+          SDK: ${{ steps.toolset.outputs.sdk }}
+        run: |
+          @"
+          The native build was not run on this runner.
+          - the project pins PlatformToolset v145 and this runner does not have it
+          - Windows SDKs present: $env:SDK
+          The JavaScript gate in the `verify` job still ran and is the blocking check.
+          The native build is verified locally with v145 (see .scratch/verify-baseline.md).
+          "@ >> $env:GITHUB_STEP_SUMMARY

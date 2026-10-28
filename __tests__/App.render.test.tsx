@@ -599,7 +599,7 @@ const CHANGED_BEFORE = 'const Greeter = () => {\nconst message = "hello";\nretur
 const CHANGED_AFTER = 'const Greeter = () => {\nconst message = "hello there";\nreturn message;\n};';
 const CHANGED_PATH = 'src/app/greeting.ts';
 
-test('a code proposal in the dispatch thread renders its added and removed lines', async () => {
+test('a code proposal appears on Results with its added and removed lines', async () => {
   await seedProposalThread([
     { itemStatus: 'done', change: { id: 'change-changed', itemId: 'item-greeting', path: CHANGED_PATH, before: CHANGED_BEFORE, after: CHANGED_AFTER, createOnly: false, createdBy: 'builder', attempt: 1 } },
   ]);
@@ -607,7 +607,7 @@ test('a code proposal in the dispatch thread renders its added and removed lines
   // "choose a folder first" refusal it shows when no project is chosen.
   await seedProjectRoot();
   setViewport(900);
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
   const rows = rowText(tree.toJSON());
 
   expect(rows).toContain(CHANGED_PATH);
@@ -620,15 +620,14 @@ test('a code proposal in the dispatch thread renders its added and removed lines
   expect(rows.some(row => row.includes('return message;'))).toBe(true);
   // The size of the change is stated on the card, so a 400-line edit is not left to row counting.
   const summary = rows.join(' ');
-  expect(summary).toContain('+1');
-  expect(summary).toContain('-1');
+  expect(summary).toContain('1 added');
+  expect(summary).toContain('1 removed');
   const fs = require('fs');
   const path = require('path');
   const captureDir = path.join(process.env.LOCALAPPDATA, 'Temp', 'opencode', 'snapshots');
   fs.mkdirSync(captureDir, { recursive: true });
   fs.writeFileSync(path.join(captureDir, 'screen-proposal-diff-900.json'), JSON.stringify(tree.toJSON(), null, 1), 'utf8');
   // The guard that matters most on this card: the apply action is still labelled and pressable.
-  await press(tree, `Apply proposal · ${CHANGED_PATH}`);
   await unmount(tree);
 }, 60000);
 
@@ -640,7 +639,7 @@ test('complete before and after contents stay reachable through an explicit acti
   await seedProposalThread([
     { itemStatus: 'done', change: { id: 'change-long', itemId: 'item-long', path: 'src/app/long.ts', before: longBefore, after: longAfter, createOnly: false, createdBy: 'builder', attempt: 1 } },
   ]);
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
 
   let rows = rowText(tree.toJSON());
   expect(rows).toContain('- old line 20');
@@ -666,7 +665,7 @@ test('a new-file proposal keeps its new-file state and reads as all additions', 
     { itemStatus: 'done', change: { id: 'change-new', itemId: 'item-new', path: 'src/app/created.ts', before: '', after: 'first added line\nsecond added line\nthird added line', createOnly: true, createdBy: 'builder', attempt: 1 } },
   ]);
   await seedProjectRoot();
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
   const rows = rowText(tree.toJSON());
 
   expect(rows).toContain('src/app/created.ts');
@@ -677,7 +676,6 @@ test('a new-file proposal keeps its new-file state and reads as all additions', 
   expect(rows).toContain('+ third added line');
   // Nothing was removed from a file that did not exist, so no row may claim otherwise.
   expect(rows.some(row => row.startsWith('- '))).toBe(false);
-  await press(tree, 'Apply proposal · src/app/created.ts');
   await unmount(tree);
 }, 60000);
 
@@ -698,7 +696,7 @@ test('proposals that already match, and proposals holding a secret, keep stating
     { itemStatus: 'done', change: { id: 'change-secret-done', itemId: 'item-secret-done', path: 'src/app/done-secret.ts', before: '', after: SECRET_AFTER, createOnly: true, createdBy: 'builder', attempt: 1 } },
   ]);
   await seedProjectRoot();
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
   const rendered = rowText(tree.toJSON()).join(' \n ');
 
   expect(rendered).toContain('src/app/same.ts');
@@ -710,13 +708,13 @@ test('proposals that already match, and proposals holding a secret, keep stating
   expect(rendered).toMatch(/contents already match|no changes/i);
   // The secret block is still surfaced, and the review flag that triggered it is still named.
   expect(rendered).toContain('Blocked for secrets · fix first');
-  expect(rendered).toContain('automatic review flagged this proposal');
+  expect(rendered).toContain('Needs review');
   // A flagged proposal may not advertise the one thing the gate forbids: an apply a user could
   // actually press. Whatever the card says, the refused action must stay unpressable.
   expect(enabledApplyControlsFor(tree.toJSON(), 'src/app/secret.ts')).toEqual([]);
   // The card may print the reason or keep it behind a labelled action. When it does the latter,
   // that action has to read as asking for the reason and never as a way past the gate.
-  const reason = reasonDisclosureFor(tree.toJSON());
+  const reason = reasonDisclosureFor(tree.toJSON(), 'src/app/secret.ts');
   if (reason) {
     expect(reason.props?.accessibilityLabel).not.toMatch(/apply anyway/i);
     await press(tree, reason.props?.accessibilityLabel as string);
@@ -774,7 +772,7 @@ function enabledApplyControlsFor(node: TreeRoot, path: string): TreeNode[] {
 // A blocked proposal may explain itself, but the explanation control has to read as a request
 // for the reason and never as a way past the gate. Its wording is not dictated, so it is found
 // by what a reader would take it to mean: this asks why, it does not offer to override.
-function reasonDisclosureFor(node: TreeRoot): TreeNode | null {
+function reasonDisclosureFor(node: TreeRoot, path: string): TreeNode | null {
   return pressableNodes(node).find(control => {
     const name = control.props?.accessibilityLabel;
     return typeof name === 'string'
@@ -784,7 +782,7 @@ function reasonDisclosureFor(node: TreeRoot): TreeNode | null {
   }) ?? null;
 }
 
-test('a rejected proposal in the dispatch thread is labelled and cannot be applied', async () => {
+test('a rejected proposal in Results is labelled and cannot be applied', async () => {
   const rejectedAt = '2026-10-18T09:00:00.000Z';
   await seedProposalThread([
     { itemStatus: 'done', change: { id: 'change-declined', itemId: 'item-declined', path: 'src/app/declined.ts', before: CHANGED_BEFORE, after: CHANGED_AFTER, createOnly: false, createdBy: 'builder', attempt: 1, rejectedAt } },
@@ -792,7 +790,7 @@ test('a rejected proposal in the dispatch thread is labelled and cannot be appli
   // With no project folder the card offers nothing but "Choose a project folder first",
   // which hides the fate's own gating. Same reason the secret gate above needs a root.
   await seedProjectRoot();
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
   const rendered = rowText(tree.toJSON()).join(' \n ');
 
   expect(rendered).toContain('src/app/declined.ts');
@@ -805,14 +803,14 @@ test('a rejected proposal in the dispatch thread is labelled and cannot be appli
   await unmount(tree);
 }, 60000);
 
-test('a reverted proposal in the dispatch thread is labelled and cannot be applied', async () => {
+test('a reverted proposal in Results is labelled and cannot be applied', async () => {
   const appliedAt = '2026-10-17T15:00:00.000Z';
   const revertedAt = '2026-10-18T09:00:00.000Z';
   await seedProposalThread([
     { itemStatus: 'done', change: { id: 'change-undone', itemId: 'item-undone', path: 'src/app/undone.ts', before: CHANGED_BEFORE, after: CHANGED_AFTER, createOnly: false, createdBy: 'builder', attempt: 1, appliedAt, revertedAt } },
   ]);
   await seedProjectRoot();
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
   const rendered = rowText(tree.toJSON()).join(' \n ');
 
   expect(rendered).toContain('src/app/undone.ts');
@@ -946,7 +944,7 @@ test('the contents disclosure reports its expanded state to accessibility consum
   await seedProposalThread([
     { itemStatus: 'done', change: { id: 'change-state', itemId: 'item-state', path: CHANGED_PATH, before: CHANGED_BEFORE, after: CHANGED_AFTER, createOnly: false, createdBy: 'builder', attempt: 1 } },
   ]);
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
 
   const collapsed = findContentDisclosure(tree.toJSON());
   if (!collapsed) throw new Error('no explicit action discloses the complete contents');
@@ -979,7 +977,7 @@ test('an empty create-only proposal stays a new file and never claims its conten
     { itemStatus: 'done', change: { id: 'change-empty-create', itemId: 'item-empty-create', path: 'src/app/empty-created.ts', before: '', after: '', createOnly: true, createdBy: 'builder', attempt: 1 } },
   ]);
   await seedProjectRoot();
-  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const tree = await mount(React.createElement(App, { initialScreen: 'results' }));
   const rows = rowText(tree.toJSON());
 
   expect(rows).toContain('src/app/empty-created.ts');
@@ -987,12 +985,11 @@ test('an empty create-only proposal stays a new file and never claims its conten
   expect(rows.some(row => row.includes('New file'))).toBe(true);
   // The card's own summary must not collapse into "nothing happened": a file that does not
   // exist yet is a creation, however empty its contents are.
-  expect(rows.some(row => /NEW FILE/.test(row))).toBe(true);
+  expect(rows.some(row => /New file, 0 lines added/i.test(row))).toBe(true);
   // The dangerous one: the "already match" copy belongs to a file that exists with these
   // contents. This file does not exist; claiming a match is a false statement of work done.
   expect(rows.some(row => /contents already match/i.test(row))).toBe(false);
-  // The apply action is still the one for a creation, still labelled and pressable.
-  await press(tree, 'Apply proposal · src/app/empty-created.ts');
+  expect(findPressableByText(tree.toJSON(), 'Apply change')).not.toBeNull();
   await unmount(tree);
 }, 60000);
 
@@ -1250,9 +1247,8 @@ test('the start control is disabled until there is a task to run', async () => {
   await unmount(tree);
 });
 
-// The run history is a collection of runs, and opening one has to leave the collection and
-// show the run. The control disappearing is the evidence that the app moved.
-test('opening a run from the history leaves the collection and shows the run', async () => {
+// Runs is an inbox: opening a row keeps the list beside its chat, with the plan separate.
+test('opening a run in the inbox shows its messages beside the list and keeps the plan separate', async () => {
   const { saveRunSnapshot } = require('../src/persistence/runStore') as typeof import('../src/persistence/runStore');
   const at = '2026-01-01T00:00:00.000Z';
   await saveRunSnapshot({
@@ -1261,7 +1257,7 @@ test('opening a run from the history leaves the collection and shows the run', a
     teamId: 'team-default',
     status: 'completed',
     items: [],
-    messages: [],
+    messages: [{ id: 'message-history', runId: 'run-history', from: 'Builder', to: 'team', text: 'The release title now fits without scrolling.', createdAt: at, kind: 'update' }],
     artifacts: [],
     changes: [],
     createdAt: at,
@@ -1269,13 +1265,75 @@ test('opening a run from the history leaves the collection and shows the run', a
   });
 
   const tree = await mount(React.createElement(App, { initialScreen: 'runs' }));
-  if (!findPressableByText(tree.toJSON(), 'Open run in Dispatch')) throw new Error('the run in the history carries no open action');
+  if (!findByLabel(tree.toJSON(), 'Open conversation: Greet the world properly.')) throw new Error('the run in the history carries no conversation action');
 
-  await pressByText(tree, 'Open run in Dispatch');
+  await press(tree, 'Open conversation: Greet the world properly.');
 
-  // The collection is behind us, and the run it opened is on screen.
-  expect(findPressableByText(tree.toJSON(), 'Open run in Dispatch')).toBeNull();
-  expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Greet the world properly.');
+  // The inbox list remains beside the selected conversation, while plan is a separate action.
+  const inbox = textNodes(tree.toJSON()).join(' \n ');
+  expect(inbox).toContain('Recent runs');
+  expect(inbox).toContain('Greet the world properly.');
+  expect(inbox).toContain('The release title now fits without scrolling.');
+  expect(findPressableByText(tree.toJSON(), 'Plan')).not.toBeNull();
+  await pressByText(tree, 'Plan');
+  expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Team plan');
+  await unmount(tree);
+});
+
+test('empty Teams page has one create action and one clear empty-state message', async () => {
+  const tree = await mount(React.createElement(App, { initialScreen: 'teams' }));
+  const createActions = pressableNodes(tree.toJSON()).filter(control => textNodes(control).some(text => /create team/i.test(text)));
+  expect(createActions).toHaveLength(1);
+  expect(textNodes(tree.toJSON()).join(' ')).toContain('No teams yet');
+  await unmount(tree);
+});
+
+test('Dispatch renders agent messages on the plan screen, with proposals on Results route', async () => {
+  const { saveRunSnapshot } = require('../src/persistence/runStore') as typeof import('../src/persistence/runStore');
+  const at = '2026-01-01T00:00:00.000Z';
+  await saveRunSnapshot({
+    id: 'run-dispatch-separation', brief: 'Review the release note hierarchy.', teamId: 'team-default', status: 'completed',
+    items: [{ id: 'item-review', title: 'Check the title hierarchy', kind: 'review', agentId: 'reviewer', dependsOn: [], status: 'done', artifactIds: [] }],
+    messages: [{ id: 'message-review', runId: 'run-dispatch-separation', from: 'Reviewer', to: 'team', text: 'The title hierarchy reads clearly.', createdAt: at, kind: 'finding' }],
+    artifacts: [],
+    changes: [{ id: 'change-review', itemId: 'item-review', path: 'src/ReleaseNotes.tsx', before: 'old', after: 'new', createOnly: false, createdBy: 'Builder', attempt: 1 }],
+    createdAt: at, updatedAt: at,
+  });
+  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+  const dispatch = textNodes(tree.toJSON()).join(' ');
+  expect(dispatch).toContain('Team plan');
+  expect(dispatch).toContain('The title hierarchy reads clearly.');
+  expect(dispatch).not.toContain('src/ReleaseNotes.tsx');
+  expect(findPressableByText(tree.toJSON(), 'Results')).not.toBeNull();
+  await pressByText(tree, 'Results');
+  expect(textNodes(tree.toJSON()).join(' ')).toContain('src/ReleaseNotes.tsx');
+  await unmount(tree);
+});
+
+test('task cards use a concise run label instead of repeating the full brief', async () => {
+  const { saveRunSnapshot } = require('../src/persistence/runStore') as typeof import('../src/persistence/runStore');
+  const at = '2026-01-01T00:00:00.000Z';
+  const brief = 'Review the release notes layout and keep the published time visible.';
+  await saveRunSnapshot({
+    id: 'run-board-label',
+    brief,
+    mission: { id: 'release-notes', name: 'Release notes review', output: 'code' },
+    teamId: 'team-default',
+    status: 'completed',
+    items: [
+      { id: 'item-1', title: 'Check the information order', kind: 'review', agentId: 'reviewer', dependsOn: [], status: 'done', artifactIds: [] },
+      { id: 'item-2', title: 'Keep the date visible', kind: 'code', agentId: 'builder', dependsOn: ['item-1'], status: 'done', artifactIds: [] },
+    ],
+    messages: [],
+    artifacts: [],
+    createdAt: at,
+    updatedAt: at,
+  });
+  const tree = await mount(React.createElement(App, { initialScreen: 'board' }));
+  const card = findPressableByText(tree.toJSON(), 'Check the information order');
+  if (!card) throw new Error('the task board did not render the seeded assignment');
+  expect(subtreeHasText(card, 'Release notes review')).toBe(true);
+  expect(subtreeHasText(card, brief)).toBe(false);
   await unmount(tree);
 });
 

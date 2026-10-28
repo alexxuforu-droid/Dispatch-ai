@@ -5,7 +5,15 @@ export type PlanStep = { title: string; kind: WorkItem['kind']; agentId: string;
 export type AgentResult = { summary: string; messages?: { to: string | 'team'; text: string; kind: 'handoff' | 'question' | 'finding' | 'update' }[]; artifacts?: Run['artifacts']; changes?: Omit<CodeChange, 'id' | 'itemId' | 'createdBy' | 'attempt'>[] };
 export interface AgentExecutor { execute(input: { runId: string; brief: string; step: WorkItem; team: Team; priorMessages: Run['messages']; feedback?: string[]; attempt?: number; signal?: AbortSignal }): Promise<AgentResult> }
 export interface RunApproval { request(run: Run, reason: string): Promise<void> }
-export interface AutoReviewer { review(input: { run: Run; item: WorkItem; signal?: AbortSignal }): Promise<{ passed: boolean; findings: string[] }> }
+/**
+ * A reviewer's verdict.
+ *  - `gateOnly` means a revision cannot fix this: the item goes straight to the human. A reviewer
+ *    that could not read the whole proposal, or could not answer at all, is not something another
+ *    attempt of the same work will repair.
+ *  - `reviewer` names who produced the verdict, for the event log.
+ */
+export type ReviewVerdict = { passed: boolean; findings: string[]; gateOnly?: boolean; reviewer?: string };
+export interface AutoReviewer { review(input: { run: Run; item: WorkItem; signal?: AbortSignal }): Promise<ReviewVerdict> }
 
 /**
  * Optional per-wave concurrency cap. Omitted (or non-positive) means today's behavior:
@@ -37,6 +45,15 @@ export class Coordinator {
     // not fall into the catch below, which would stamp a terminal run (a completed one, say) as
     // failed and persist that lie.
     if (!['queued', 'cancelled', 'failed', 'needs-approval'].includes(run.status)) throw new Error('This run is not waiting to start or resume.');
+    // A dependency edge added after the plan was created (or restored from a snapshot) must be
+    // enforced here: a ready item whose dependency is not done waits. create() sets blocked/ready
+    // at plan time, but a human edit can add an edge to an item that is already ready, and this
+    // pass is the only place that demotes ready → blocked before execution begins.
+    for (const item of run.items) {
+      if (item.status === 'done' || item.status === 'failed' || item.status === 'cancelled' || item.status === 'needs-approval') continue;
+      const depsDone = item.dependsOn.every(id => run.items.find(candidate => candidate.id === id)?.status === 'done');
+      if (item.status === 'ready' && !depsDone) item.status = 'blocked';
+    }
     try {
       throwIfAborted(signal);
       const resumeStatuses = new Set(['cancelled', 'failed', 'running', 'needs-approval']);
@@ -104,13 +121,14 @@ export class Coordinator {
         for (const { item, agent, attempt: initialAttempt } of wave) {
           const appliedBeforeReview = new Set((run.changes ?? []).filter(change => change.appliedAt).map(change => change.id));
           let verdict = await this.reviewer.review({ run, item, signal });
+          await this.emitVerdict(run.id, item, initialAttempt, verdict);
           const appliedChanges = (run.changes ?? []).filter(change => change.appliedAt && !appliedBeforeReview.has(change.id));
           if (appliedChanges.length) await this.emit(run.id, 'run.status', { status: run.status, appliedChanges });
           throwIfAborted(signal);
           let attempt = initialAttempt;
           let revisions = 0;
           const canRevise = () => item.kind === 'code' || (item.kind === 'image' && run.artifacts.some(artifact => artifact.workItemId === item.id && artifact.kind === 'image' && !artifact.supersededAt));
-          while (!verdict.passed && canRevise() && revisions < 2) {
+          while (!verdict.passed && canRevise() && revisions < 2 && !verdict.gateOnly) {
             const feedback = verdict.findings.slice(0, 8);
             for (const finding of feedback) await this.emit(run.id, 'review.finding', { itemId: item.id, finding, attempt });
             const request = { id: `msg-${run.messages.length + 1}`, runId: run.id, workItemId: item.id, attempt: attempt + 1, from: 'Automatic code reviewer', to: agent.name, text: `Please revise your proposal to address these review findings. Keep the change within the original task and the same attached/new files.\n\n${feedback.map((finding, index) => `${index + 1}. ${finding}`).join('\n')}`, kind: 'finding' as const, createdAt: new Date().toISOString() };
@@ -145,6 +163,7 @@ export class Coordinator {
             attempt += 1;
             revisions += 1;
             verdict = await this.reviewer.review({ run, item, signal });
+            await this.emitVerdict(run.id, item, attempt, verdict);
             throwIfAborted(signal);
           }
           for (const finding of verdict.findings) await this.emit(run.id, 'review.finding', { itemId: item.id, finding, attempt });
@@ -168,10 +187,22 @@ export class Coordinator {
       throwIfAborted(signal);
       run.status = 'completed';
     } catch (error) {
-      // A device that cannot save is not a run that failed. Bookkeeping failures are rethrown
-      // with the run state left as it was, so a finished run is never rewritten as failed by
-      // a storage hiccup. Work failures still fail the run, as before.
-      if (error instanceof RunStoreError) throw error;
+      // A device that cannot save is not a work failure, but a run cannot be left 'running'
+      // either: nothing can resume a running run, so a storage hiccup would strand it forever.
+      // The run is moved to a terminal, resumable state with the storage error recorded, and the
+      // error itself is still rethrown so the caller knows the history is incomplete.
+      if (error instanceof RunStoreError) {
+        const detail = error.message;
+        run.status = 'failed';
+        run.updatedAt = new Date().toISOString();
+        for (const item of run.items.filter(candidate => ['running', 'ready', 'blocked'].includes(candidate.status))) item.status = 'failed';
+        const message: Run['messages'][number] = { id: `msg-${run.messages.length + 1}`, runId: run.id, from: 'Dispatch', to: 'team', text: `Run stopped: the run history could not be saved (${detail}). Completed work is kept; resume this run when storage is available.`, kind: 'finding', createdAt: run.updatedAt };
+        run.messages.push(message);
+        // Best effort: the same store may still be refusing writes. The in-memory state above is
+        // what the resume path reads, so the run is recoverable even when this append fails.
+        try { await this.emit(run.id, 'run.status', { status: 'failed', error: detail }); } catch { /* Storage is still broken; the rethrown error says so. */ }
+        throw error;
+      }
       const cancelled = signal?.aborted === true || (error instanceof Error && error.name === 'AbortError');
       run.status = cancelled ? 'cancelled' : 'failed';
       const detail = cancelled ? 'Run cancelled by you.' : error instanceof Error ? error.message : String(error);
@@ -186,6 +217,11 @@ export class Coordinator {
   private async emit(runId: string, type: RunEvent['type'], payload: unknown) {
     try { await this.store.append({ runId, type, payload, at: new Date().toISOString() }); }
     catch (error) { throw new RunStoreError(error); }
+  }
+
+  /** Writes the review verdict to the log: who reviewed, what they decided, and why. */
+  private async emitVerdict(runId: string, item: WorkItem, attempt: number, verdict: ReviewVerdict) {
+    await this.emit(runId, 'review.verdict', { itemId: item.id, attempt, passed: verdict.passed, gateOnly: verdict.gateOnly === true, reviewer: verdict.reviewer, findings: verdict.findings });
   }
 }
 

@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, Pressable, StyleProp, View, ViewStyle } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, Pressable, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import { colors, motion } from './theme';
 
 /**
@@ -47,6 +47,67 @@ export function Reveal({ children, delay = 0, style }: { children: React.ReactNo
 }
 
 /**
+ * Escape, and the key events React Native Windows delivers.
+ *
+ * Windows keeps keyboard focus in the app, so an overlay that opens without taking focus
+ * leaves the keyboard on whatever was behind it, and an overlay that cannot be dismissed
+ * with Escape traps the person inside it. Both rules live here so every surface answers
+ * them the same way: the key is Escape, and the event arrives in one of two shapes.
+ */
+export const ESCAPE_KEY = 'Escape';
+
+/**
+ * A key event, in the shapes React Native and React Native Windows deliver it.
+ *
+ * React Native Windows reports the modifier keys with the event, so a handler can tell
+ * Enter from Shift+Enter without guessing.
+ */
+export type KeyEventLike = { nativeEvent?: { key?: string; shiftKey?: boolean }; key?: string; shiftKey?: boolean };
+
+/** True when a key event is the Escape key. */
+export function isEscapeEvent(event: KeyEventLike | null | undefined): boolean {
+  const key = event?.nativeEvent?.key ?? event?.key;
+  return key === ESCAPE_KEY || key === 'Esc';
+}
+
+/** True when a key event is the Enter key. */
+export function isEnterEvent(event: KeyEventLike | null | undefined): boolean {
+  const key = event?.nativeEvent?.key ?? event?.key;
+  return key === 'Enter';
+}
+
+/** True when the Shift key was held down when the key event happened. */
+export function hasShift(event: KeyEventLike | null | undefined): boolean {
+  return !!(event?.nativeEvent?.shiftKey ?? event?.shiftKey);
+}
+
+/**
+ * The props that carry a Windows key handler onto a view.
+ *
+ * React Native's own TypeScript definitions do not include `onKeyDown`, but React Native
+ * Windows delivers it, so the one cast lives here rather than at every call site. The
+ * target type is a parameter so the same helper serves a View and a TextInput.
+ */
+export function keyHandlerProps<T = React.ComponentProps<typeof View>>(onKeyDown: (event: KeyEventLike) => void): T {
+  return { onKeyDown } as unknown as T;
+}
+
+/**
+ * Moves keyboard focus to a view when an overlay opens.
+ *
+ * The returned callback is a ref: it focuses the node it is given, so the focus lands on
+ * whatever just mounted. Where the platform exposes no focus method the call is a no-op
+ * and the overlay is still reachable by tabbing.
+ */
+export function useInitialFocus<T>(active: boolean) {
+  return useCallback((node: T | null) => {
+    if (!active || !node) return;
+    const target = node as unknown as { focus?: () => void };
+    if (typeof target.focus === 'function') target.focus();
+  }, [active]);
+}
+
+/**
  * A visible focus ring for keyboard users. Windows draws no ring of its own on a Pressable,
  * so a focused control has to say so itself or keyboard navigation is invisible.
  */
@@ -62,13 +123,8 @@ export function useFocusRing() {
  * A Pressable that shows where keyboard focus is. Windows leaves focus to the app, so a
  * control that is only distinguishable by its press state is invisible to keyboard users.
  *
- * The indicator is a colour change, never a size change: a control that already has a border
- * gets its border recoloured, and one without gets a lighter surface. Adding a border on focus
- * would grow the control by a few pixels and shift the layout under the keyboard user's hands.
- * The colour is picked from the control's own fill: the ink on the lead block, the
- * page colour on a light fill, and the lead colour on a dark surface. A control that
- * carries a border has its border recoloured, which costs no reflow; one that does not
- * is given a transparent border to recolour.
+ * Existing borders recolour in place; borderless controls get an overlaid outline, so focus is
+ * visible without changing the control's size or replacing its selected fill.
  */
 /** The light fills in the app. A focus ring has to be dark on these. */
 const LIGHT_FILLS = [colors.text, colors.lead, colors.pop].map(value => value.toLowerCase());
@@ -93,7 +149,7 @@ const toRgba = (colour: string): string => {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 };
 
-export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, onPressOut, focusIndicator = true, hoverColour, ...rest }: React.ComponentProps<typeof Pressable> & { focusIndicator?: boolean; hoverColour?: string }) {
+export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, onPressOut, focusIndicator = true, hoverColour, tooltip, ...rest }: React.ComponentProps<typeof Pressable> & { focusIndicator?: boolean; hoverColour?: string; tooltip?: string }) {
   const { focusProps, focused } = useFocusRing();
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -114,16 +170,14 @@ export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, on
     return () => { liftAnimation.current?.stop(); };
   }, [hovered, lift]);
 
-  // The press state is tracked here rather than read from the Pressable, because the style has
-  // to be a plain array for the animated fill to resolve.
+  // Flatten last-wins styles so selected controls keep their effective fill while focused.
   const resolved = typeof style === 'function' ? style({ pressed }) : style;
-  const flat = (Array.isArray(resolved) ? resolved : [resolved]).filter(Boolean) as (Record<string, unknown> | undefined)[];
-  const entries = flat.filter((entry): entry is Record<string, unknown> => Boolean(entry));
-  const background = entries.map(entry => entry.backgroundColor).find(value => typeof value === 'string') as string | undefined;
+  const flat = StyleSheet.flatten(resolved) ?? {};
+  const background = typeof flat.backgroundColor === 'string' ? flat.backgroundColor : undefined;
   const baseFill = toRgba(background ?? 'transparent');
   const onAccent = background?.toLowerCase() === colors.lead.toLowerCase();
   const onLight = background ? LIGHT_FILLS.includes(background.toLowerCase()) : false;
-  const hasBorder = entries.some(entry => typeof entry.borderWidth === 'number' && entry.borderWidth > 0);
+  const hasBorder = (flat.borderWidth ?? 0) > 0;
   // The ring follows the fill it sits on: the ink on the lead block, the page colour on a
   // light fill, and the lead colour on a dark surface.
   const ring = onAccent ? colors.leadInk : onLight ? colors.page : colors.lead;
@@ -132,20 +186,23 @@ export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, on
   const fill = lift.interpolate({ inputRange: [0, 1], outputRange: [baseFill, toRgba(hoverColour ?? 'rgba(255,255,255,0.10)')] });
   // An absolutely positioned layer is a surface, not a control: painting it would cover
   // what is underneath, which is the opposite of helping the person see where they are.
-  const absolute = entries.some(entry => entry.position === 'absolute');
-  // A control with a border shows the focus on that border. One without has no border to
-  // recolour, so the focus paints a fill instead, and the hover fill steps aside for it.
-  const focusFill = onAccent ? colors.pop : colors.surfaceActive;
+  const absolute = flat.position === 'absolute';
   const finalStyle = absolute
     ? resolved
     : [
         resolved,
-        { backgroundColor: focused && focusIndicator && !hasBorder ? focusFill : fill },
+        { backgroundColor: fill },
         ...(focused && focusIndicator && hasBorder ? [{ borderColor: ring }] : []),
       ];
+  const focusRingStyle: ViewStyle = { ...StyleSheet.absoluteFillObject, borderRadius: flat.borderRadius ?? 0, borderColor: ring, borderWidth: 2 };
+  const content = typeof children === 'function' ? children({ pressed }) : children;
+  // React Native Windows has a `tooltip` prop on every view
+  // (`Libraries/Components/View/ViewPropTypes.windows.js`) and React Native's own
+  // TypeScript definitions do not carry it, so the one cast happens here.
+  const pressableProps = (tooltip ? { ...rest, tooltip } : rest) as unknown as React.ComponentProps<typeof Pressable>;
 
   return <AnimatedPressable
-    {...rest}
+    {...pressableProps}
     onHoverIn={(event) => { setHovered(true); rest.onHoverIn?.(event); }}
     onHoverOut={(event) => { setHovered(false); setPressed(false); rest.onHoverOut?.(event); }}
     onPressIn={(event) => { setPressed(true); onPressIn?.(event); }}
@@ -153,5 +210,8 @@ export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, on
     onFocus={(event) => { focusProps.onFocus(); onFocus?.(event); }}
     onBlur={(event) => { focusProps.onBlur(); onBlur?.(event); }}
     style={finalStyle as StyleProp<ViewStyle>}
-  >{children}</AnimatedPressable>;
+  >
+    {content}
+    {focused && focusIndicator && !hasBorder ? <View pointerEvents="none" testID="focus-visible-ring" style={focusRingStyle} /> : null}
+  </AnimatedPressable>;
 }

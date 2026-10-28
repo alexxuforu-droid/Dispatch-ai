@@ -13,8 +13,8 @@ const MAX_DP_CELLS = 2_000_000;
 
 /** Line-level diff of two file contents. Pure: same inputs, same output, no I/O, no dependencies. */
 export function diffLines(before: string, after: string): DiffResult {
-  const oldLines = splitLines(trimTrailingNewline(before));
-  const newLines = splitLines(trimTrailingNewline(after));
+  const oldLines = splitLines(before);
+  const newLines = splitLines(after);
 
   let head = 0;
   while (head < oldLines.length && head < newLines.length && oldLines[head] === newLines[head]) head += 1;
@@ -45,13 +45,19 @@ export function diffLines(before: string, after: string): DiffResult {
   return { identical: false, added, removed, truncated: view.truncated, lines: view.lines };
 }
 
+/**
+ * Splits into lines for comparison, ignoring line endings.
+ *
+ * A Windows file and its LF twin are the same file to a reviewer: without this, every line
+ * differed and the whole file showed as changed. The endings are normalised for the comparison
+ * only -- the content that gets written to disk is untouched.
+ */
 function splitLines(text: string): string[] {
-  return text === '' ? [] : text.split('\n');
-}
-
-/** Drops at most one final newline so a trailing-newline-only difference is not a change; blank-line edits still diff. */
-function trimTrailingNewline(text: string): string {
-  return text.endsWith('\n') ? text.slice(0, -1) : text;
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // Drops at most one final newline so a trailing-newline-only difference is not a change;
+  // blank-line edits still diff.
+  const trimmed = normalized.endsWith('\n') ? normalized.slice(0, -1) : normalized;
+  return trimmed === '' ? [] : trimmed.split('\n');
 }
 
 function context(text: string, oldLineNumber?: number, newLineNumber?: number): DiffLine {

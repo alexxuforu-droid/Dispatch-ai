@@ -17,6 +17,16 @@ export function normalizeProviderEndpoint(input: string): string {
 
 export const MODEL_CATALOG_TTL_MS = 10 * 60 * 1000;
 
+// The /models listing is a suggestion source: it is capped in ids, in bytes and in time.
+export const MAX_MODEL_IDS = 500;
+export const MAX_MODELS_RESPONSE_BYTES = 2 * 1024 * 1024;
+export const MODELS_FETCH_TIMEOUT_MS = 15_000;
+export const MAX_PROVIDER_ERROR_CHARS = 400;
+export const MAX_PROVIDER_ERROR_BYTES = 8 * 1024;
+
+// The provider response is read through this shape so a stub without `text` still works.
+type ResponseLike = { ok: boolean; status: number; json?: () => Promise<unknown>; text?: () => Promise<string> };
+
 // ponytail: chars/4 heuristic, not a real tokenizer. Ceiling: +-tens of percent vs the
 // provider's own tokenizer, which is why estimated rows are always labeled and never summed
 // with exact ones. Replace only if a tokenizer dependency is ever justified.
@@ -73,12 +83,13 @@ export function parseModelIds(payload: unknown): string[] {
   const ids = new Set<string>();
   // ponytail: a Set, because ids.includes() dedupe is O(n^2) and this list is
   // provider-controlled. A 40k-entry /models response is enough to hang the JS thread.
-  // Ceiling: unbounded entry count; cap only if a real provider is observed exceeding it.
+  // The list is capped as well: the catalog is a suggestion source, not an inventory.
   for (const entry of data) {
     const id = entry && typeof entry === 'object' ? (entry as { id?: unknown }).id : undefined;
     if (typeof id !== 'string') continue;
     const trimmed = id.trim();
     if (trimmed) ids.add(trimmed);
+    if (ids.size >= MAX_MODEL_IDS) break;
   }
   return [...ids];
 }
@@ -89,7 +100,7 @@ export class ModelCatalogCache {
   private readonly entries = new Map<string, { ids: string[]; fetchedAt: number }>();
   constructor(private readonly ttlMs: number = MODEL_CATALOG_TTL_MS) {}
   record(endpoint: string, ids: string[], at: number = Date.now()): void {
-    this.entries.set(endpoint, { ids: [...new Set(ids)], fetchedAt: at });
+    this.entries.set(endpoint, { ids: [...new Set(ids)].slice(0, MAX_MODEL_IDS), fetchedAt: at });
   }
   lookup(endpoint: string, at: number = Date.now()): string[] {
     const entry = this.entries.get(endpoint);
@@ -117,13 +128,70 @@ export async function fetchModelIds(profile: ProviderProfile): Promise<string[]>
   const key = await loadProviderSecret('openai-compatible');
   if (!key) throw new Error('Add an API key first.');
   const endpoint = normalizeProviderEndpoint(profile.endpoint);
-  const response = await fetch(`${endpoint}/models`, { headers: { Authorization: `Bearer ${key}` } });
+  const response = await fetchWithTimeout(`${endpoint}/models`, { headers: { Authorization: `Bearer ${key}` } }, MODELS_FETCH_TIMEOUT_MS);
   if (!response.ok) {
-    const detail = response.status === 401 || response.status === 403 ? 'The provider rejected this API key.' : `The provider returned HTTP ${response.status}.`;
-    throw new Error(detail);
+    const detail = await readProviderError(response);
+    const base = response.status === 401 || response.status === 403 ? 'The provider rejected this API key.' : `The provider returned HTTP ${response.status}.`;
+    throw new Error(detail ? `${base} ${detail}` : base);
   }
-  const payload = await response.json().catch(() => undefined); // the listing is optional: some providers answer with no body
+  const payload = await readBoundedJson(response, MAX_MODELS_RESPONSE_BYTES);
   return parseModelIds(payload);
+}
+
+/** Fetches with a deadline, so a provider that never answers cannot hang the screen. */
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error(`The provider did not answer within ${Math.round(timeoutMs / 1000)} seconds.`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([fetch(url, { ...init, signal: controller.signal }), deadline]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** Reads a JSON body without letting a provider decide how much memory it takes. */
+async function readBoundedJson(response: ResponseLike, maxBytes: number): Promise<unknown> {
+  if (typeof response.text === 'function') {
+    const text = await response.text();
+    if (text.length > maxBytes) throw new Error(`The provider response was too large (${maxBytes} bytes maximum).`);
+    try { return JSON.parse(text); } catch { return undefined; }
+  }
+  return response.json ? response.json().catch(() => undefined) : undefined;
+}
+
+/** Reads a bounded slice of an error body so the failure says what the provider said. */
+async function readProviderError(response: ResponseLike): Promise<string> {
+  try {
+    if (typeof response.text === 'function') return providerErrorDetail((await response.text()).slice(0, MAX_PROVIDER_ERROR_BYTES));
+    const parsed = response.json ? await response.json().catch(() => undefined) : undefined;
+    return providerErrorDetail(parsed === undefined ? '' : JSON.stringify(parsed).slice(0, MAX_PROVIDER_ERROR_BYTES));
+  } catch {
+    return '';
+  }
+}
+
+/** Turns a provider error body into one readable line, or an empty string when there is none. */
+export function providerErrorDetail(body: string): string {
+  const trimmed = body.trim();
+  if (!trimmed) return '';
+  let text = trimmed;
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: unknown };
+    const candidate = parsed?.error;
+    if (candidate && typeof candidate === 'object' && typeof (candidate as { message?: unknown }).message === 'string') text = (candidate as { message: string }).message;
+    else if (typeof candidate === 'string') text = candidate;
+  } catch {
+    // Not JSON: the raw text is the detail.
+  }
+  const collapsed = text.replace(/\s+/g, ' ').trim();
+  if (!collapsed) return '';
+  return collapsed.length > MAX_PROVIDER_ERROR_CHARS ? `${collapsed.slice(0, MAX_PROVIDER_ERROR_CHARS)}…` : collapsed;
 }
 
 // Refresh is advisory. It records suggestions and nothing else: it never reads, rewrites or
@@ -153,7 +221,10 @@ export async function completeChat(profile: ProviderProfile, messages: ChatMessa
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, messages, temperature: 0.2 }),
   });
-  if (!response.ok) throw new Error(`The provider returned HTTP ${response.status}. Check its endpoint, model, and API key.`);
+  if (!response.ok) {
+    const detail = await readProviderError(response);
+    throw new Error(`The provider returned HTTP ${response.status}. Check its endpoint, model, and API key.${detail ? ` Provider said: ${detail}` : ''}`);
+  }
   const payload = await response.json() as { choices?: { message?: { content?: string | { type: string; text?: string }[] } }[] };
   const rawContent = payload.choices?.[0]?.message?.content;
   let content: string;
@@ -177,7 +248,10 @@ export async function generateImage(profile: ProviderProfile, prompt: string, si
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: imageModel, prompt, n: 1, size: '1024x1024' }),
   });
-  if (!response.ok) throw new Error(`Image generation returned HTTP ${response.status}. Check that the image model is enabled for this endpoint.`);
+  if (!response.ok) {
+    const detail = await readProviderError(response);
+    throw new Error(`Image generation returned HTTP ${response.status}. Check that the image model is enabled for this endpoint.${detail ? ` Provider said: ${detail}` : ''}`);
+  }
   const payload = await response.json() as { data?: { b64_json?: string; url?: string }[] };
   const image = payload.data?.[0]?.b64_json;
   if (!image) throw new Error('The image endpoint returned no base64 image. This provider must support base64 image generation.');

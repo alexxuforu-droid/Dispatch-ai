@@ -15,29 +15,44 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $capture = Join-Path $here 'click-capture.ps1'
 
 $wide = @(
-  @('dispatch', 120, 240),
-  @('design', 120, 284),
-  @('room', 120, 326),
-  @('results', 120, 369),
-  @('board', 120, 412),
-  @('teams', 120, 493),
-  @('settings', 120, 903)
+  @('dispatch', 'Dispatch', 'Dispatch'),
+  @('design', 'Design studio', 'Design studio'),
+  @('runs', 'Runs', 'Runs'),
+  @('results', 'Results and review', 'Results & review'),
+  @('board', 'Task board', 'Task board'),
+  @('teams', 'Teams', 'Teams'),
+  @('agents', 'Agents', 'Agents'),
+  @('reviews', 'Reviews', 'Reviews'),
+  @('artifacts', 'Artifacts', 'Artifacts'),
+  @('usage', 'Usage', 'Usage'),
+  @('workflows', 'Workflows', 'Workflows'),
+  @('plugins', 'Capabilities', 'Plugins'),
+  @('settings', 'Advanced settings', 'Advanced settings')
 )
 
 $compact = @(
-  @('dispatch', 40, 207),
-  @('design', 40, 257),
-  @('room', 40, 305),
-  @('results', 40, 355),
-  @('board', 40, 400),
-  @('teams', 40, 492),
-  @('agents', 40, 533),
-  @('settings', 40, 656)
+  @('dispatch', 'Dispatch', 'Dispatch'),
+  @('design', 'Design studio', 'Design studio'),
+  @('runs', 'Runs', 'Runs'),
+  @('results', 'Results and review', 'Results & review'),
+  @('board', 'Task board', 'Task board'),
+  @('teams', 'Teams', 'Teams'),
+  @('agents', 'Agents', 'Agents'),
+  @('reviews', 'Reviews', 'Reviews'),
+  @('artifacts', 'Artifacts', 'Artifacts'),
+  @('usage', 'Usage', 'Usage'),
+  @('workflows', 'Workflows', 'Workflows'),
+  @('plugins', 'Capabilities', 'Plugins'),
+  @('settings', 'Advanced settings', 'Advanced settings')
 )
 
 $screens = if ($Mode -eq 'compact') { $compact } else { $wide }
+$first = $true
 
 foreach ($screen in $screens) {
   $out = "$Prefix-$($screen[0]).png"
-  & powershell -ExecutionPolicy Bypass -File $capture -Out $out -Size "${Width}x${Height}" -Click "$($screen[1]),$($screen[2])" -WaitMs 2200 | Select-Object -Last 1
+  $args = @('-ExecutionPolicy', 'Bypass', '-File', $capture, '-Out', $out, '-NavName', $screen[1], '-ExpectedTitle', $screen[2], '-WaitMs', '1000')
+  if ($first) { $args += @('-Size', "${Width}x${Height}"); $first = $false }
+  & powershell @args | Select-Object -Last 1
+  if ($LASTEXITCODE -ne 0) { throw "capture failed for '$($screen[0])' at ${Width}px" }
 }
