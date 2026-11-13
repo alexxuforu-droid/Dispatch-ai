@@ -1,197 +1,68 @@
-import React, { useMemo, useRef, useState } from 'react';
-import { Image, PanResponder, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Run } from './orchestration/types';
+import React, { useState } from 'react';
+import { Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { FocusPressable } from './Reveal';
-import { colors, typography } from './theme';
-import { COMPACT_WIDTH } from './app/types';
+import { colors, radius, typography } from './theme';
 import { pickDesignReferenceImage, DesignImageReference } from './persistence/workspaceProject';
 import { DesignAnnotation } from './orchestration/types';
 
-type Piece = { id: string; title: string; kind: 'reference' | 'note' | 'prompt'; x: number; y: number; detail: string; tone: string };
-type Preset = { id: string; name: string; output: 'Image' | 'UI / code'; intent: string; change: string; keep: string; skills: string[] };
-const presets: Preset[] = [
-  { id: 'brand', name: 'Brand refinement', output: 'Image', intent: 'Polish the existing brand mark for production use.', change: 'Refine lighting, edge quality, and material depth with restrained detail.', keep: 'Preserve the silhouette, proportions, color identity, and recognizable features.', skills: ['Brand fidelity', '3D lighting', 'Material craft', 'Visual critique'] },
-  { id: 'product', name: 'Product hero', output: 'Image', intent: 'Create a focused product hero concept.', change: 'Improve hierarchy, camera angle, reflections, and negative space.', keep: 'Keep the subject shape and product identity exact.', skills: ['Composition', '3D lighting', 'Material craft'] },
-  { id: 'interface', name: 'App screen', output: 'UI / code', intent: 'Design a clear, production-ready application screen.', change: 'Improve information hierarchy, spacing, states, and interaction clarity.', keep: 'Preserve existing product behavior and recognizable visual language.', skills: ['UI systems', 'Typography', 'Accessibility', 'Visual critique'] },
-  { id: 'poster', name: 'Editorial poster', output: 'Image', intent: 'Develop a distinctive editorial poster composition.', change: 'Refine type scale, contrast, cropping, rhythm, and print finish.', keep: 'Keep the core subject and supplied copy unchanged.', skills: ['Composition', 'Typography', 'Material craft'] },
-  { id: 'object', name: '3D object study', output: 'Image', intent: 'Create a polished 3D study of the specified object.', change: 'Give the form believable volume, precise bevels, studio reflections, and clean material separation.', keep: 'Preserve the source object’s exact silhouette, proportions, and key details.', skills: ['3D form', '3D lighting', 'Material craft', 'Visual critique'] },
-  { id: 'design-system', name: 'Design system', output: 'UI / code', intent: 'Create a coherent interface design system and representative screen.', change: 'Establish type, spacing, color roles, components, and realistic interaction states.', keep: 'Maintain accessibility, clear hierarchy, and the existing product’s identity.', skills: ['UI systems', 'Typography', 'Accessibility', 'Brand fidelity'] },
-];
-const designSkills = [
-  { id: 'composition', name: 'Composition', note: 'Hierarchy, balance, framing, and negative space.' },
-  { id: 'brand', name: 'Brand fidelity', note: 'Keep supplied marks, colors, and proportions recognizable.' },
-  { id: 'form', name: '3D form', note: 'Volume, bevels, silhouette, and believable construction.' },
-  { id: 'lighting', name: '3D lighting', note: 'Studio setup, reflections, shadow direction, and exposure.' },
-  { id: 'materials', name: 'Material craft', note: 'Surface response, roughness, transparency, and finish.' },
-  { id: 'type', name: 'Typography', note: 'Type hierarchy, fit, readability, and spacing.' },
-  { id: 'ui', name: 'UI systems', note: 'Reusable interface rules, states, and implementation detail.' },
-  { id: 'accessibility', name: 'Accessibility', note: 'Contrast, keyboard/touch use, and readable control states.' },
-  { id: 'critique', name: 'Visual critique', note: 'Inspect output for artifacts, alignment, and polish.' },
-];
-const promptRecipes = [
-  { title: 'Beveled product form', detail: 'Create a single 3D product form with controlled bevels, physically plausible thickness, crisp silhouette, and no added parts.' },
-  { title: 'Studio lighting rig', detail: 'Use a large soft key light, restrained rim light, broad reflection cards, a grounded contact shadow, and clean highlight rolloff.' },
-  { title: 'Satin anodized metal', detail: 'Apply satin anodized metal with fine directional brushing, subtle edge highlights, realistic roughness, and no mirror-like chrome.' },
-  { title: 'Optical glass', detail: 'Use clear optical glass with physically plausible refraction, subtle edge tint, controlled reflections, and no milky white patches.' },
-  { title: 'Camera + render', detail: 'Use a three-quarter product camera, 70–85 mm equivalent lens, orthographic-like perspective, neutral studio environment, and high sample clean render.' },
-  { title: 'Keep-source exact', detail: 'Treat the reference as a locked blueprint: preserve silhouette, count, proportions, placement, and all identifying details; improve only finish and dimensional lighting.' },
-  { title: 'Material separation', detail: 'Separate surfaces by response and roughness rather than extra outlines; keep transitions precise, realistic, and visually quiet.' },
-  { title: 'Render cleanup', detail: 'Remove clipping, stray geometry, jagged edges, shadow gaps, banding, floating parts, and unintended text; inspect at thumbnail and full size.' },
-];
-const initialPieces: Piece[] = [
-  { id: 'subject', title: 'Main subject', kind: 'reference', x: 10, y: 13, detail: 'Reference / locked silhouette', tone: colors.support },
-  { id: 'keep', title: 'Keep unchanged', kind: 'note', x: 56, y: 15, detail: 'Shape · proportions · identity', tone: colors.line },
-  { id: 'finish', title: 'Finish pass', kind: 'prompt', x: 30, y: 53, detail: 'Materials · light · clean edges', tone: colors.line },
-];
-
 /**
- * The constraint each deliverable puts on the run.
+ * Design studio: attach a screenshot, say what to change, send it to Dispatch.
  *
- * The selector chose an output, but an output name on its own does not say what has to come
- * back. This paragraph says it, and it goes into the brief, so the agents read the same rule
- * the person chose on screen.
+ * That is the whole screen. The screenshot rides along with the brief, so the team sees
+ * exactly what the person was looking at when they described the change.
  */
-const DELIVERABLE_CONSTRAINT: Record<'Image' | 'UI / code', string> = {
-  'Image': 'Deliverable constraint: return one image artifact that honors the requested output and the keep list, with concise change notes. A description in place of the image does not satisfy this brief.',
-  'UI / code': 'Deliverable constraint: return one UI or code artifact that preserves the existing product behavior, with concise change notes. A mock or a description in place of the artifact does not satisfy this brief.',
-};
-
-export function DesignStudio({ roles, activeTeamName, runHistory, latestRun, onSendBrief, onError, width }: { roles: { id: string; label: string }[]; activeTeamName: string; runHistory: Run[]; latestRun: Run | null; onSendBrief: (data: {brief:string; reference?:DesignImageReference; annotations:DesignAnnotation[]}) => void; onError:(message:string)=>void; width: number }) {
-  const [presetId, setPresetId] = useState('brand');
-  const [output, setOutput] = useState<'Image' | 'UI / code'>('Image');
-  const [intent, setIntent] = useState(presets[0].intent);
-  const [change, setChange] = useState(presets[0].change);
-  const [keep, setKeep] = useState(presets[0].keep);
-  const [skills, setSkills] = useState<string[]>(presets[0].skills);
-  const [pieces, setPieces] = useState<Piece[]>(initialPieces);
-  const [selectedId, setSelectedId] = useState('subject');
-  const [stageWidth, setStageWidth] = useState(720);
-  const [filter, setFilter] = useState('');
-  const [reference,setReference]=useState<DesignImageReference>(); const [annotations,setAnnotations]=useState<DesignAnnotation[]>([]); const [callout,setCallout]=useState(''); const [canvasSize,setCanvasSize]=useState({width:720,height:430});
-  // The same window floor the app itself uses, so the studio does not wait for a
-  // narrower window than the rest of the app before it stacks its columns.
-  const compact = width < COMPACT_WIDTH;
-  const selected = pieces.find(piece => piece.id === selectedId);
-  const latestImage = useMemo(() => {
-    const runs = [latestRun, ...runHistory.filter(item => item.id !== latestRun?.id)].filter((item): item is Run => !!item);
-    for (const run of runs) {
-      const artifact = [...run.artifacts].reverse().find(item => item.kind === 'image' && !item.supersededAt && run.items.some(work => work.artifactIds.includes(item.id) && ['done', 'needs-approval'].includes(work.status)));
-      if (artifact) return { artifact, run };
-    }
-    return undefined;
-  }, [latestRun, runHistory]);
-  const latestCode = useMemo(() => {
-    const runs = [latestRun, ...runHistory.filter(item => item.id !== latestRun?.id)].filter((item): item is Run => !!item);
-    for (const run of runs) {
-      const proposal = [...(run.changes ?? [])].reverse().find(candidate => !candidate.supersededAt);
-      if (proposal) return { proposal, run };
-    }
-    return undefined;
-  }, [latestRun, runHistory]);
-  const showCode = (output === 'UI / code' && !!latestCode) || (!latestImage && !!latestCode);
-  const applyPreset = (preset: Preset) => { setPresetId(preset.id); setOutput(preset.output); setIntent(preset.intent); setChange(preset.change); setKeep(preset.keep); setSkills(preset.skills); };
-  const addRecipe = (recipe: typeof promptRecipes[number]) => {
-    const id = `prompt-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const cardWidth = Math.min(210, Math.max(154, stageWidth * .28));
-    setPieces(current => [...current, { id, title: recipe.title, kind: 'prompt', detail: recipe.detail, x: Math.min(100 - cardWidth / Math.max(stageWidth, 1) * 100, 14 + ((current.length * 19) % 59)), y: Math.min(64, 24 + ((current.length * 17) % 47)), tone: colors.support }]);
-    setSelectedId(id);
+export function DesignStudio({ onSendBrief, onError }: { onSendBrief: (data: { brief: string; reference?: DesignImageReference; annotations: DesignAnnotation[] }) => void; onError: (message: string) => void }) {
+  const [reference, setReference] = useState<DesignImageReference>();
+  const [prompt, setPrompt] = useState('');
+  const attach = () => {
+    pickDesignReferenceImage()
+      .then(image => { if (image) setReference(image); })
+      .catch(error => onError(error instanceof Error ? error.message : 'Could not attach the screenshot.'));
   };
-  const movePiece = (id: string, dx: number, dy: number) => setPieces(current => current.map(piece => {
-    if (piece.id !== id) return piece;
-    const cardWidth = Math.min(210, Math.max(154, stageWidth * .28));
-    const maxX = Math.max(0, 100 - cardWidth / Math.max(stageWidth, 1) * 100);
-    return { ...piece, x: Math.max(0, Math.min(maxX, piece.x + dx / Math.max(stageWidth, 1) * 100)), y: Math.max(0, Math.min(64, piece.y + dy / Math.max(canvasSize.height, 1) * 100)) };
-  }));
-  const adjustLayer = (id: string, delta: number) => setPieces(current => { const index = current.findIndex(piece => piece.id === id); const next = Math.min(current.length - 1, Math.max(0, index + delta)); if (index < 0 || next === index) return current; const reordered = [...current]; const [item] = reordered.splice(index, 1); reordered.splice(next, 0, item); return reordered; });
-  const brief = useMemo(() => {
-    const preset = presets.find(item => item.id === presetId)?.name ?? 'Custom design';
-    const board = pieces.map(piece => `- ${piece.title} (${piece.kind}, placed ${Math.round(piece.x)}% from left / ${Math.round(piece.y)}% from top): ${piece.detail}`).join('\n');
-    const skillNotes = skills.map(id => { const skill = designSkills.find(item => item.name === id); return skill ? `- ${skill.name}: ${skill.note}` : `- ${id}`; }).join('\n');
-    return [`DESIGN STUDIO BRIEF: ${preset}`, `Output: ${output}`, DELIVERABLE_CONSTRAINT[output], `Agent team: ${activeTeamName || 'Current team'}`, `Requested outcome: ${intent}`, `Change these things: ${change}`, `Keep these things exactly: ${keep}`, `Design skills: ${skills.join(', ') || 'None selected'}`, skillNotes ? `Skill instructions:\n${skillNotes}` : '', `Canvas layout and references:\n${board}`, annotations.length?`Image callouts (percentage coordinates on the attached reference):\n${annotations.map((a,i)=>`${i+1}. at ${Math.round(a.x)}% from left, ${Math.round(a.y)}% from top: ${a.note}`).join('\n')}`:'', '3D prompt recipes are written instructions only; do not assume any 3D asset files have already been created.', 'Inspect the latest design output when the run finishes. Return the requested image or code artifact and concise change notes.'].filter(Boolean).join('\n\n').slice(0, 11000);
-  }, [activeTeamName, change, intent, keep, output, pieces, presetId, skills,annotations]);
-  const filteredRecipes = promptRecipes.filter(recipe => `${recipe.title} ${recipe.detail}`.toLowerCase().includes(filter.toLowerCase()));
   return <ScrollView style={s.page} contentContainerStyle={s.pageContent}>
-    <View style={s.headingRow}><View style={s.flexOne}><Text style={s.title}>Design workspace</Text><Text style={s.subtitle}>Show the team what you mean. Arrange references, call out exact changes, and send the whole canvas as a structured brief.</Text></View></View>
-    <View style={[s.columns, compact && s.columnsCompact]}>
-      <View style={[s.leftRail, compact && s.leftRailCompact]}>
-        <SectionTitle title="Starting point" />
-        <View style={s.presetRow}>{presets.map(preset => <FocusPressable key={preset.id} accessibilityRole="button" accessibilityState={{ selected: presetId === preset.id }} onPress={() => applyPreset(preset)} style={[s.preset, preset.id === presetId && s.presetActive]}><Text style={[s.presetName, preset.id === presetId && s.presetNameActive]}>{preset.name}</Text><Text style={s.presetOutput}>{preset.output}</Text></FocusPressable>)}</View>
-        <SectionTitle title="3D prompt recipes" note="Text prompts only, added to the canvas" />
-        <TextInput value={filter} onChangeText={setFilter} placeholder="Find a prompt…" placeholderTextColor={colors.textMuted} accessibilityLabel="Search 3D prompt recipes" style={s.search}/>
-        <View style={s.recipeList}>{filteredRecipes.map(recipe => <FocusPressable key={recipe.title} accessibilityRole="button" onPress={() => addRecipe(recipe)} style={({ pressed }) => [s.recipeButton, pressed && s.pressed]}><Text style={s.recipeIconText}>3D</Text><View style={s.flexOne}><Text style={s.recipeTitle}>{recipe.title}</Text><Text numberOfLines={2} style={s.recipeDetail}>{recipe.detail}</Text></View><Text style={s.addMark}>+</Text></FocusPressable>)}</View>
-        <Text style={s.smallNote}>Recipes describe form, material, lighting, and render intent. No mesh or image is created here.</Text>
-      </View>
-
-      <View style={s.centerColumn}>
-        <View style={s.canvasTop}><View><Text style={s.canvasTitle}>Reference board</Text></View><View style={s.canvasActions}><FocusPressable accessibilityRole="button" accessibilityLabel="Reset canvas" onPress={() => { setPieces(initialPieces); setSelectedId('subject'); }} style={s.toolButton}><Text style={s.toolText}>Reset</Text></FocusPressable><FocusPressable accessibilityRole="button" accessibilityLabel="Add a reference note" onPress={() => addRecipe(promptRecipes[0])} style={s.addCanvasButton}><Text style={s.addCanvasText}>＋ Add prompt card</Text></FocusPressable></View></View>
-        <View style={s.stage} onLayout={event => {setStageWidth(event.nativeEvent.layout.width);setCanvasSize({width:event.nativeEvent.layout.width,height:event.nativeEvent.layout.height});}}>
-          {reference&&<><Image source={{uri:reference.uri}} resizeMode="contain" style={s.referenceImage}/><FocusPressable pointerEvents={callout.trim() ? 'auto' : 'none'} accessibilityRole="button" accessibilityLabel="Place a callout at this point on the reference image" style={StyleSheet.absoluteFill} onPress={e=>{if(!callout.trim())return;const x=e.nativeEvent.locationX/canvasSize.width*100,y=e.nativeEvent.locationY/canvasSize.height*100;setAnnotations(a=>[...a,{id:`callout-${Date.now()}`,x,y,note:callout.trim().slice(0,400)}]);setCallout('');}}>{annotations.map((a,i)=><View key={a.id} pointerEvents="none" style={[s.calloutPin,{left:`${a.x}%`,top:`${a.y}%`}]}><Text style={s.calloutPinText}>{i+1}</Text></View>)}</FocusPressable></>}
-          {pieces.map((piece, index) => <DraggablePiece key={piece.id} piece={piece} selected={selectedId === piece.id} zIndex={index + 1} stageWidth={stageWidth} onSelect={() => setSelectedId(piece.id)} onMove={(dx, dy) => movePiece(piece.id, dx, dy)} />)}
-          {!pieces.length && <Text style={s.emptyStage}>Add a reference or prompt from the library.</Text>}
-          
-        </View>
-        <View style={s.objectToolbar}><Text style={s.toolbarLabel}>{selected ? `Selected · ${selected.title}` : 'Select a canvas card'}</Text><View style={s.toolbarControls}>
-          <FocusPressable accessibilityRole="button" accessibilityLabel="Move selected item left" disabled={!selected} onPress={() => selected && movePiece(selected.id, -18, 0)} style={[s.moveButton, !selected && s.controlDisabled]}><Text style={s.moveText}>←</Text></FocusPressable><FocusPressable accessibilityRole="button" accessibilityLabel="Move selected item up" disabled={!selected} onPress={() => selected && movePiece(selected.id, 0, -16)} style={[s.moveButton, !selected && s.controlDisabled]}><Text style={s.moveText}>↑</Text></FocusPressable><FocusPressable accessibilityRole="button" accessibilityLabel="Move selected item down" disabled={!selected} onPress={() => selected && movePiece(selected.id, 0, 16)} style={[s.moveButton, !selected && s.controlDisabled]}><Text style={s.moveText}>↓</Text></FocusPressable><FocusPressable accessibilityRole="button" accessibilityLabel="Move selected item right" disabled={!selected} onPress={() => selected && movePiece(selected.id, 18, 0)} style={[s.moveButton, !selected && s.controlDisabled]}><Text style={s.moveText}>→</Text></FocusPressable><FocusPressable accessibilityRole="button" accessibilityLabel="Bring selected item forward" disabled={!selected} onPress={() => selected && adjustLayer(selected.id, 1)} style={[s.layerButton, !selected && s.controlDisabled]}><Text style={s.layerText}>Bring forward</Text></FocusPressable><FocusPressable accessibilityRole="button" accessibilityLabel="Remove selected canvas item" disabled={!selected} onPress={() => { if (!selected) return; const remaining = pieces.filter(piece => piece.id !== selected.id); setPieces(remaining); setSelectedId(remaining[0]?.id ?? ''); }} style={[s.removeButton, !selected && s.controlDisabled]}><Text style={s.removeText}>Remove</Text></FocusPressable>
-        </View></View>
-        <View style={s.calloutTools}><FocusPressable accessibilityRole="button" onPress={()=>pickDesignReferenceImage().then(image=>{if(image){setReference(image);setAnnotations([]);}}).catch(error=>onError(error instanceof Error?error.message:'Could not attach the reference image.'))} style={s.addCanvasButton}><Text style={s.addCanvasText}>{reference?'Replace reference image':'＋ Attach reference image'}</Text></FocusPressable>{reference&&<><Text style={s.smallNote}>Type a note, then click its location on the image to pin it.</Text><View style={s.outputRow}><TextInput value={callout} onChangeText={setCallout} placeholder="e.g. keep this edge crisp" placeholderTextColor={colors.textMuted} style={[s.search, s.flexOne]} /><Text style={s.smallNote}>{annotations.length} callouts</Text></View>{annotations.map((a,i)=><FocusPressable key={a.id} onPress={()=>setAnnotations(items=>items.filter(item=>item.id!==a.id))} style={s.smallNote}>#{i+1} · {a.note} · remove</FocusPressable>)}</>}</View>
-        <SectionTitle title="Design skills" note="Select the lenses you want the team to apply" />
-        <View style={s.skillGrid}>{designSkills.map(skill => { const active = skills.includes(skill.name); return <FocusPressable key={skill.id} accessibilityRole="checkbox" accessibilityState={{ checked: active }} onPress={() => setSkills(current => active ? current.filter(name => name !== skill.name) : [...current, skill.name])} style={[s.skillChip, active && s.skillChipActive]}><View style={[s.checkMark, active && s.checkMarkActive]}>{active && <Text style={s.checkGlyph}>✓</Text>}</View><View style={s.flexOne}><Text style={[s.skillName, active && s.skillNameActive]}>{skill.name}</Text><Text style={s.skillNote}>{skill.note}</Text></View></FocusPressable>; })}</View>
-      </View>
-
-      <View style={[s.rightRail, compact && s.rightRailCompact]}>
-        <View style={s.agentHead}><View><Text style={s.canvasTitle}>Design brief</Text></View><View style={s.teamBadge}><Text numberOfLines={1} style={s.teamBadgeText}>{activeTeamName || 'Current team'}</Text></View></View>
-        <Text style={s.fieldLabel}>Make</Text><TextInput value={intent} onChangeText={setIntent} multiline maxLength={700} accessibilityLabel="Design outcome" style={[s.textField, s.outcomeField]}/>
-        <Text style={s.fieldLabel}>Change</Text><TextInput value={change} onChangeText={setChange} multiline maxLength={1200} accessibilityLabel="What agents should change" style={[s.textField, s.changeField]}/>
-        <Text style={s.fieldLabel}>Keep exactly</Text><TextInput value={keep} onChangeText={setKeep} multiline maxLength={1000} accessibilityLabel="What agents must preserve" style={[s.textField, s.keepField]}/>
-        <Text style={s.fieldLabel}>Deliverable</Text><View style={s.outputRow}>{(['Image', 'UI / code'] as const).map(value => <FocusPressable key={value} accessibilityRole="radio" accessibilityState={{ checked: output === value }} onPress={() => setOutput(value)} style={[s.outputChoice, output === value && s.outputChoiceActive]}><Text style={[s.outputChoiceText, output === value && s.outputChoiceTextActive]}>{value}</Text></FocusPressable>)}</View><Text style={s.constraintNote}>{DELIVERABLE_CONSTRAINT[output]}</Text>
-        
-        <FocusPressable accessibilityRole="button" onPress={() => onSendBrief({brief,reference,annotations})} style={({ pressed }) => [s.sendButton, pressed && s.pressed]}><Text style={s.sendButtonText}>Send complete brief to Dispatch</Text><Text style={s.sendArrow}>→</Text></FocusPressable>
-        <Text style={s.sendHint}>Dispatch opens with everything attached. Review the plan, then approve the run.</Text>
-        <View style={s.previewPanel}><View style={s.previewHeader}><View><Text style={s.previewTitle}>Latest finished design</Text></View><View style={s.latestTag}><Text style={s.latestTagText}>{latestImage ? 'Latest' : 'Automatic'}</Text></View></View>
-          {showCode && latestCode ? <><View style={s.codePreview}><Text style={s.codePreviewPath}>{latestCode.proposal.path} · revision {latestCode.proposal.attempt}</Text><ScrollView style={s.codePreviewScroll} nestedScrollEnabled><Text selectable style={s.codePreviewText}>{latestCode.proposal.after}</Text></ScrollView></View><Text style={s.previewMeta}>Latest code proposal · {latestCode.run.status}</Text></>
-            : latestImage ? <><Image source={{ uri: latestImage.artifact.uri }} resizeMode="contain" accessibilityLabel={`Latest agent image: ${latestImage.artifact.name}`} style={s.outputPreview} /><Text numberOfLines={1} style={s.previewMeta}>{latestImage.artifact.name} · {latestImage.run.status}</Text></>
-              : latestCode ? <View style={s.codePreview}><Text style={s.codePreviewPath}>{latestCode.proposal.path}</Text><Text style={s.codePreviewText}>Latest code proposal · revision {latestCode.proposal.attempt}</Text></View>
-              : <View style={s.previewEmpty}><Text style={s.previewEmptyTitle}>Your latest output will appear here</Text><Text style={s.previewEmptyBody}>When an agent finishes an image or code deliverable, this panel switches to that newest result automatically.</Text></View>}
-          {latestRun && <Text style={s.previewMeta}>Run · {latestRun.status}</Text>}
-        </View>
-        <Text style={s.agentFootnote}>{roles.length ? roles.map(role => role.label).join(' · ') : 'Choose a team in Teams to assign design agents.'}</Text>
-      </View>
-    </View>
+    <Text style={s.title}>Design studio</Text>
+    <FocusPressable accessibilityRole="button" accessibilityLabel="Attach a screenshot" onPress={attach} style={({ pressed }) => [s.attachButton, pressed && s.pressed]}>
+      <Text style={s.attachText}>{reference ? 'Replace screenshot' : 'Attach screenshot'}</Text>
+    </FocusPressable>
+    {reference ? <View style={s.previewFrame}>
+      <Image source={{ uri: reference.uri }} resizeMode="contain" accessibilityLabel="Attached screenshot" style={s.previewImage} />
+      <FocusPressable accessibilityRole="button" accessibilityLabel="Remove the screenshot" onPress={() => setReference(undefined)} style={s.removeButton}>
+        <Text style={s.removeText}>Remove</Text>
+      </FocusPressable>
+    </View> : null}
+    <TextInput
+      value={prompt}
+      onChangeText={setPrompt}
+      multiline
+      maxLength={4000}
+      accessibilityLabel="Describe the change"
+      placeholder="Describe the change"
+      placeholderTextColor={colors.textMuted}
+      style={s.input}
+      textAlignVertical="top"
+    />
+    <FocusPressable
+      accessibilityRole="button"
+      disabled={!prompt.trim() && !reference}
+      onPress={() => onSendBrief({ brief: prompt.trim(), reference, annotations: [] })}
+      style={({ pressed }) => [s.sendButton, pressed && s.pressed]}>
+      <Text style={s.sendText}>Send to Dispatch</Text>
+    </FocusPressable>
   </ScrollView>;
 }
 
-function SectionTitle({ title, note }: { title: string; note?: string }) {
-  return <View style={s.sectionTitleRow}><View style={s.flexOne}><Text style={s.sectionHeading}>{title}</Text>{note && <Text style={s.sectionNote}>{note}</Text>}</View></View>;
-}
-
-function DraggablePiece({ piece, selected, zIndex, stageWidth, onSelect, onMove }: { piece: Piece; selected: boolean; zIndex: number; stageWidth: number; onSelect: () => void; onMove: (dx: number, dy: number) => void }) {
-  const moved = useRef(false);
-  const last = useRef({ dx: 0, dy: 0 });
-  const handlers = useRef({ onMove, onSelect });
-  handlers.current = { onMove, onSelect };
-  const responder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) + Math.abs(gesture.dy) > 3,
-    onPanResponderGrant: () => { moved.current = false; last.current = { dx: 0, dy: 0 }; handlers.current.onSelect(); },
-    onPanResponderMove: (_, gesture) => { moved.current = true; const dx = gesture.dx - last.current.dx; const dy = gesture.dy - last.current.dy; last.current = { dx: gesture.dx, dy: gesture.dy }; handlers.current.onMove(dx, dy); },
-    onPanResponderRelease: () => { if (!moved.current) handlers.current.onSelect(); },
-    onPanResponderTerminationRequest: () => false,
-  }), []);
-  return <View {...responder.panHandlers} accessibilityLabel={`${piece.title}, draggable canvas item`} style={[s.pieceWrap, { left: `${piece.x}%`, top: `${piece.y}%`, zIndex, backgroundColor: piece.tone, width: Math.min(210, Math.max(154, stageWidth * .28)) }, selected && s.pieceSelected]}>
-    <View style={s.pieceGrip}><View style={s.gripDots}><View style={s.gripDot}/><View style={s.gripDot}/><View style={s.gripDot}/><View style={s.gripDot}/></View><Text style={s.pieceKind}>{piece.kind}</Text></View>
-    <Text numberOfLines={2} style={s.pieceTitle}>{piece.title}</Text><Text numberOfLines={4} style={s.pieceDetail}>{piece.detail}</Text><View style={s.pieceFoot}><Text style={s.piecePos}>X {Math.round(piece.x)} · Y {Math.round(piece.y)}</Text><Text style={s.pieceDragHint}>Drag to place</Text></View>
-  </View>;
-}
-
-const s = StyleSheet.create({ referenceImage:{...StyleSheet.absoluteFillObject,width:'100%',height:'100%'},calloutTools:{padding:10,marginTop:10,gap:7,backgroundColor:colors.surfaceRaised,borderRadius: 8},calloutPin:{position:'absolute',width:26,height:26,marginLeft:-13,marginTop:-13,borderRadius: 12,backgroundColor:colors.attention,borderColor:colors.text,borderWidth:2,alignItems:'center',justifyContent:'center'},calloutPinText:{color:colors.surfaceRaised,fontSize:11,fontWeight:'800'},
-  page: { flex: 1 }, flexOne: { flex: 1 }, pageContent: { paddingHorizontal: 22, paddingTop: 19, paddingBottom: 34, gap: 17 },
-  headingRow: { minHeight: 86, flexDirection: 'row', alignItems: 'center', gap: 18 }, title: { color: colors.text, fontFamily: typography.display, fontSize: 20, fontWeight: '600', letterSpacing: -.6, marginTop: 5 }, subtitle: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, lineHeight: 17, marginTop: 4, maxWidth: 740 },
-  columns: { flexDirection: 'row', alignItems: 'flex-start', gap: 13 }, columnsCompact: { flexWrap: 'wrap' }, leftRail: { width: 220, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.surface, padding: 13 }, leftRailCompact: { width: '100%' }, centerColumn: { flex: 1, minWidth: 440, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.surface, padding: 15 }, rightRail: { width: 306, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.surface, padding: 14 }, rightRailCompact: { width: '100%' },
-  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3, marginBottom: 11 }, sectionHeading: { color: colors.text, fontFamily: typography.body, fontSize: 11, fontWeight: '700' }, sectionNote: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, lineHeight: 15, marginTop: 3 },
-  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, paddingBottom: 14 }, preset: { width: 90, minHeight: 57, justifyContent: 'center', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }, presetActive: { borderColor: colors.textMuted, backgroundColor: colors.surfaceActive }, presetName: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '600' }, presetNameActive: { color: colors.text }, presetOutput: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, marginTop: 5 }, search: { minHeight: 44, borderWidth: 1, borderColor: colors.line, borderRadius: 8, color: colors.text, backgroundColor: colors.surface, paddingHorizontal: 9, fontFamily: typography.body, fontSize: 14, lineHeight: 20 }, recipeList: { gap: 5, marginTop: 8 }, recipeButton: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 7, borderWidth: 1, borderColor: colors.line, borderRadius: 8, backgroundColor: colors.surface, paddingHorizontal: 7, paddingVertical: 6 }, recipeIconText: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, fontWeight: '700' }, recipeTitle: { color: colors.text, fontFamily: typography.body, fontSize: 11, fontWeight: '700' }, recipeDetail: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, lineHeight: 15, marginTop: 2 }, addMark: { color: colors.textQuiet, fontSize: 16, paddingHorizontal: 2 }, smallNote: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, lineHeight: 15, marginTop: 8 },
-  canvasTop: { minHeight: 41, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9, gap: 9 }, canvasTitle: { color: colors.text, fontFamily: typography.body, fontSize: 14, fontWeight: '700', marginTop: 3 }, canvasActions: { flexDirection: 'row', alignItems: 'center', gap: 6 }, toolButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 9, borderWidth: 1, borderColor: colors.line, borderRadius: 8 }, toolText: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11 }, addCanvasButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 9, borderRadius: 8, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceRaised }, addCanvasText: { color: colors.text, fontFamily: typography.body, fontSize: 11, fontWeight: '700' }, stage: { minHeight: 430, overflow: 'hidden', position: 'relative', borderRadius: 8, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.page }, emptyStage: { position: 'absolute', alignSelf: 'center', top: '45%', color: colors.textMuted, fontFamily: typography.body, fontSize: 11 },
-  pieceWrap: { position: 'absolute', minHeight: 116, padding: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 8, backgroundColor: colors.surfaceRaised }, pieceSelected: { borderColor: colors.lead, borderWidth: 2 }, pieceGrip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }, gripDots: { flexDirection: 'row', flexWrap: 'wrap', width: 12, height: 9, gap: 2 }, gripDot: { width: 3, height: 3, borderRadius: 4, backgroundColor: colors.textQuiet }, pieceKind: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '700' }, pieceTitle: { color: colors.text, fontFamily: typography.body, fontSize: 11, lineHeight: 15, fontWeight: '700' }, pieceDetail: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, lineHeight: 15, marginTop: 4 }, pieceFoot: { flexDirection: 'row', justifyContent: 'space-between', gap: 5, marginTop: 8 }, piecePos: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11 }, pieceDragHint: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11 }, objectToolbar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 7, minHeight: 47, borderBottomWidth: 1, borderBottomColor: colors.line, marginBottom: 15 }, toolbarLabel: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '600' }, toolbarControls: { flexDirection: 'row', alignItems: 'center', gap: 4 }, moveButton: { width: 44, height: 44, borderRadius: 6, backgroundColor: colors.surfaceRaised, alignItems: 'center', justifyContent: 'center' }, moveText: { color: colors.text, fontFamily: typography.body, fontSize: 13 }, layerButton: { minHeight: 44, paddingHorizontal: 9, justifyContent: 'center', borderRadius: 6, backgroundColor: colors.surfaceRaised }, layerText: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11 }, removeButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 9 }, removeText: { color: colors.critical, fontFamily: typography.body, fontSize: 11 }, controlDisabled: { backgroundColor: colors.surface, opacity: 0.55 },
-  skillGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 }, skillChip: { width: '32%', minWidth: 155, minHeight: 50, flexGrow: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 7, padding: 8, borderRadius: 8, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }, skillChipActive: { borderColor: colors.line, backgroundColor: colors.surfaceRaised }, checkMark: { width: 14, height: 14, borderRadius: 4, borderWidth: 1, borderColor: colors.lineStrong, alignItems: 'center', justifyContent: 'center', marginTop: 1 }, checkMarkActive: { backgroundColor: colors.lead, borderColor: colors.lead }, checkGlyph: { color: colors.page, fontSize: 11, fontWeight: '800' }, skillName: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '700' }, skillNameActive: { color: colors.text }, skillNote: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, lineHeight: 15, marginTop: 3 },
-  agentHead: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 7 }, teamBadge: { maxWidth: 120, borderWidth: 1, borderColor: colors.lineStrong, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 5 }, teamBadgeText: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '600' }, fieldLabel: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '700', marginTop: 11, marginBottom: 4 }, constraintNote: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 12, lineHeight: 17, marginTop: 7 }, textField: { color: colors.text, fontFamily: typography.body, fontSize: 14, lineHeight: 20, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, textAlignVertical: 'top' }, outcomeField: { minHeight: 58 }, changeField: { minHeight: 86 }, keepField: { minHeight: 72 }, outputRow: { flexDirection: 'row', gap: 6 }, outputChoice: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: 8 }, outputChoiceActive: { backgroundColor: colors.surfaceActive, borderColor: colors.textMuted }, outputChoiceText: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11 }, outputChoiceTextActive: { color: colors.text, fontWeight: '700' }, sendButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 8, backgroundColor: colors.lead, paddingHorizontal: 10, marginTop: 10 }, sendButtonText: { color: colors.page, fontFamily: typography.body, fontSize: 11, fontWeight: '700' }, sendArrow: { color: colors.page, fontSize: 16, fontWeight: '600' }, pressed: { opacity: .78 }, sendHint: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, lineHeight: 15, textAlign: 'center', marginTop: 5 }, agentFootnote: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, lineHeight: 15, marginTop: 8 },
-  previewPanel: { borderWidth: 1, borderColor: colors.line, borderRadius: 8, padding: 9, backgroundColor: colors.page, marginTop: 13 }, previewHeader: { minHeight: 35, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5, marginBottom: 7 }, previewTitle: { color: colors.text, fontFamily: typography.body, fontSize: 11, fontWeight: '700', marginTop: 3 }, latestTag: { flexDirection: 'row', alignItems: 'center', gap: 5 }, latestTagText: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '700', letterSpacing: .7 }, outputPreview: { width: '100%', height: 190, borderRadius: 6, backgroundColor: colors.page }, previewMeta: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, marginTop: 6 }, previewEmpty: { minHeight: 113, justifyContent: 'center', padding: 9, borderRadius: 6, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.lineStrong }, previewEmptyTitle: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 11, fontWeight: '600' }, previewEmptyBody: { color: colors.textMuted, fontFamily: typography.body, fontSize: 11, lineHeight: 15, marginTop: 5 }, codePreview: { minHeight: 100, padding: 9, borderRadius: 6, backgroundColor: colors.surfaceRaised }, codePreviewScroll: { maxHeight: 185, marginTop: 7 }, codePreviewPath: { color: colors.text, fontFamily: typography.mono, fontSize: 11 }, codePreviewText: { color: colors.textQuiet, fontFamily: typography.mono, fontSize: 11, lineHeight: 15 },
+const s = StyleSheet.create({
+  page: { flex: 1 },
+  pageContent: { paddingHorizontal: 22, paddingTop: 19, paddingBottom: 34, gap: 14 },
+  title: { color: colors.text, fontFamily: typography.display, fontSize: 20, fontWeight: '600', letterSpacing: -.6 },
+  attachButton: { minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 8, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceRaised },
+  attachText: { color: colors.text, fontFamily: typography.body, fontSize: 13, fontWeight: '700' },
+  previewFrame: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.card, backgroundColor: colors.page, padding: 10, gap: 8 },
+  previewImage: { width: '100%', height: 320, borderRadius: 6 },
+  removeButton: { alignSelf: 'flex-start', minHeight: 36, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: colors.line },
+  removeText: { color: colors.textQuiet, fontFamily: typography.body, fontSize: 12 },
+  input: { minHeight: 120, color: colors.text, fontFamily: typography.body, fontSize: 14, lineHeight: 20, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9 },
+  sendButton: { minHeight: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 8, backgroundColor: colors.lead },
+  sendText: { color: colors.page, fontFamily: typography.body, fontSize: 13, fontWeight: '700' },
+  pressed: { opacity: .78 },
 });

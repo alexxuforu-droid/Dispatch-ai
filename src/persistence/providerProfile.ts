@@ -2,7 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CorruptStorageError, StorageRead, preserveReadableSlot, readJsonSlot } from './storageSafety';
 
 const PROFILE_KEY = 'dispatch.provider.profile.v1';
-export type ProviderProfile = { endpoint: string; model: string; imageModel: string };
+/**
+ * Where a provider call goes.
+ *
+ * `secretId` names the credential slot in Windows Credential Manager. It is absent on the
+ * workspace profile, which means the workspace key, and it is set on the profile that is
+ * derived for one agent, which means that agent's own key. The name never leaves the app and
+ * the key itself is never written to app storage.
+ */
+export type ProviderProfile = { endpoint: string; model: string; imageModel: string; secretId?: string };
 export const defaultProviderProfile: ProviderProfile = { endpoint: 'https://api.openai.com/v1', model: '', imageModel: '' };
 
 /** Reads the profile with its corruption status, so "never configured" can be told from "lost". */

@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle } from 'react-native';
 import { FocusPressable } from './Reveal';
 import { DispatchIcon, type IconName } from './DispatchIcon';
+import { copyText } from './clipboard';
 import { colors, radius, space, type } from './theme';
 
 /**
@@ -10,7 +11,8 @@ import { colors, radius, space, type } from './theme';
  * Every screen builds from these and nothing else, so the app reads as one system instead
  * of thirteen screens that each invented a button. The rules they hold:
  *
- * - Chrome is neutral. The lead colour is for content, not for controls.
+ * - Chrome is neutral. The lead colour is for content, not for controls. Button is the one
+ *   exception: it carries the owner-specified web button palette (the button* tokens).
  * - One shape per tier: a control is a control radius, a card is a card radius.
  * - Every interactive thing has a disabled state that still looks like the thing.
  * - Every icon-only control carries an accessible name, and a tooltip where the icon is not
@@ -22,10 +24,10 @@ type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'critical' | 'inverse';
 
 /** The fill each button fades to when the pointer is on it. */
 const HOVER_FILL: Record<ButtonVariant, string> = {
-  primary: colors.leadHover,
+  primary: colors.buttonPrimaryHover,
   secondary: colors.surfaceActive,
-  ghost: colors.surfaceActive,
-  critical: colors.criticalWash,
+  ghost: 'transparent',
+  critical: colors.buttonCriticalHover,
   inverse: colors.surfaceActive,
 };
 
@@ -36,6 +38,7 @@ export function Button({
   disabled,
   icon,
   accessibilityLabel,
+  accessibilityHint,
   accessibilityState,
   style,
   testID,
@@ -46,31 +49,37 @@ export function Button({
   disabled?: boolean;
   icon?: React.ReactNode;
   accessibilityLabel?: string;
+  accessibilityHint?: string;
   accessibilityState?: { expanded?: boolean; selected?: boolean; checked?: boolean; busy?: boolean };
   style?: StyleProp<ViewStyle>;
   testID?: string;
 }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <FocusPressable
       testID={testID}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityHint={accessibilityHint}
       accessibilityState={{ ...accessibilityState, disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       // The fill fades to this colour and back. It is the control's own background, so the
       // radius holds and nothing moves under the pointer.
       hoverColour={HOVER_FILL[variant]}
       style={({ pressed }) => [
         styles.button,
         styles[`button_${variant}`],
+        variant === 'ghost' && hovered && !disabled && styles.buttonGhostHover,
         disabled && styles.buttonDisabled,
-        pressed && !disabled && styles.pressed,
+        pressed && !disabled && styles.buttonPressed,
         style,
       ]}
     >
       {icon}
-      <Text style={[styles.buttonLabel, styles[`buttonLabel_${variant}`], disabled && styles.buttonLabelDisabled]}>{label}</Text>
+      <Text style={[styles.buttonLabel, styles[`buttonLabel_${variant}`]]}>{label}</Text>
     </FocusPressable>
   );
 }
@@ -111,6 +120,63 @@ export function IconButton({
       </FocusPressable>
       {tooltip && hovered ? <Text style={styles.tooltipLabel}>{tooltip}</Text> : null}
     </View>
+  );
+}
+
+/**
+ * The copy control.
+ *
+ * Copying is one of the things a person does with a result they cannot otherwise take away:
+ * a file path, a diff, a run id, a total. The button says what it copied after the fact, so
+ * the action is not silent, and it announces itself for a screen reader, because the visible
+ * label change is not what a screen reader reads.
+ *
+ * The label is the confirmation: it says "Copied" for two seconds and then goes back to what
+ * it was. A colour change alone would be invisible to anyone who cannot see the colour.
+ */
+export function CopyButton({
+  text,
+  label = 'Copy',
+  subject,
+  style,
+}: {
+  text: string;
+  /** The words on the button before the copy: "Copy path". */
+  label?: string;
+  /** What was copied, named in the confirmation: "the file path". */
+  subject: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const press = () => {
+    if (!copyText(text)) {
+      setState('failed');
+      AccessibilityInfo.announceForAccessibility('Copy failed.');
+    } else {
+      setState('copied');
+      AccessibilityInfo.announceForAccessibility(`Copied ${subject} to the clipboard.`);
+    }
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => setState('idle'), 2000);
+  };
+  // The accessible name always contains the words on the button (WCAG 2.5.3), so a screen
+  // reader hears "Copy path" and then "Copied the file path" rather than a name that no
+  // longer matches the control.
+  const word = state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : label;
+  const name = state === 'copied' ? `Copied ${subject}` : state === 'failed' ? 'Copy failed' : label;
+  return (
+    <FocusPressable
+      accessibilityRole="button"
+      accessibilityLabel={name}
+      tooltip={name}
+      onPress={press}
+      style={({ pressed }) => [styles.copyButton, pressed && styles.pressed, style]}
+    >
+      <DispatchIcon name={state === 'copied' ? 'check' : 'copy'} size={14} color={colors.textQuiet} />
+      <Text style={[styles.copyButtonLabel, state === 'copied' && styles.copyButtonLabelCopied, state === 'failed' && styles.copyButtonLabelFailed]}>{word}</Text>
+    </FocusPressable>
   );
 }
 
@@ -160,6 +226,55 @@ export function Field({
       {error ? <Text style={styles.fieldError}>{error}</Text> : hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
     </View>
   );
+}
+
+/**
+ * The loading placeholder: a neutral block shaped like the content that is coming, at the
+ * raised-surface fill and chip radius. It pulses while visible unless the system asks for
+ * reduced motion; in the test environment it is a plain static view, and the animation is
+ * always stopped when the block unmounts.
+ */
+export function Skeleton({ style, testID }: { style?: StyleProp<ViewStyle>; testID?: string }) {
+  const isTest = process.env.NODE_ENV === 'test';
+  const pulse = useRef(new Animated.Value(1)).current;
+  const [reduceMotion, setReduceMotion] = useState(isTest);
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(value => { if (active) setReduceMotion(value); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (isTest || reduceMotion) { pulse.setValue(1); return; }
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 0.55, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [isTest, reduceMotion, pulse]);
+  if (isTest || reduceMotion) return <View accessible={false} testID={testID} style={[styles.skeleton, style]} />;
+  return <Animated.View accessible={false} testID={testID} style={[styles.skeleton, style, { opacity: pulse }]} />;
+}
+
+/** The design plan's delay: a skeleton appears after this long, not on the first paint. */
+const SKELETON_DELAY_MS = 300;
+
+/**
+ * Shows a group of Skeleton blocks only once ctive has held for the delay. In the test
+ * environment there are no timers, so the blocks render immediately when active.
+ */
+export function SkeletonGate({ active, children }: { active: boolean; children: React.ReactNode }) {
+  const isTest = process.env.NODE_ENV === 'test';
+  const [visible, setVisible] = useState(isTest && active);
+  useEffect(() => {
+    if (!active) { setVisible(false); return; }
+    if (isTest) { setVisible(true); return; }
+    const timer = setTimeout(() => setVisible(true), SKELETON_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [active, isTest]);
+  return visible ? <View accessibilityRole="progressbar" accessibilityLabel="Loading">{children}</View> : null;
 }
 
 export function Toggle({
@@ -296,7 +411,7 @@ export function EmptyState({
 }: {
   icon?: React.ReactNode;
   title: string;
-  sentence: string;
+  sentence?: string;
   action?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
 }) {
@@ -304,7 +419,7 @@ export function EmptyState({
     <View style={[styles.empty, style]}>
       {icon ? <View style={styles.emptyIcon}>{icon}</View> : null}
       <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptySentence}>{sentence}</Text>
+      {sentence ? <Text style={styles.emptySentence}>{sentence}</Text> : null}
       {action ? <View style={styles.emptyAction}>{action}</View> : null}
     </View>
   );
@@ -398,23 +513,45 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  button_primary: { backgroundColor: colors.lead, borderColor: colors.lead },
+  button_primary: { backgroundColor: colors.buttonPrimary, borderColor: colors.buttonPrimary },
   button_secondary: { backgroundColor: colors.surfaceRaised, borderColor: colors.line },
-  button_ghost: { backgroundColor: 'transparent', borderColor: 'transparent' },
-  button_critical: { backgroundColor: colors.criticalSurface, borderColor: colors.criticalSurface },
+  button_ghost: { backgroundColor: 'transparent', borderColor: colors.line },
+  button_critical: { backgroundColor: 'transparent', borderColor: colors.buttonCriticalBorder },
   // For a button that sits on the lead block, where a white button would not be legible.
   button_inverse: { backgroundColor: colors.page, borderColor: colors.page },
-  // Disabled keeps the shape of the control it replaces, so the row does not reflow when a
-  // control is switched off, and is dimmed so it does not read as available.
-  buttonDisabled: { backgroundColor: colors.surface, borderColor: colors.line, opacity: 0.55 },
+  // Ghost is the one variant whose hover is a border, not a fill.
+  buttonGhostHover: { borderColor: colors.buttonGhostHoverBorder },
+  // Disabled is opacity only (web .btn:disabled): the control keeps its own fill and shape,
+  // so the row does not reflow when a control is switched off.
+  buttonDisabled: { opacity: 0.45 },
   buttonLabel: { ...type.label },
-  buttonLabel_primary: { color: colors.leadInk },
+  buttonLabel_primary: { color: colors.buttonPrimaryInk },
   buttonLabel_secondary: { color: colors.text },
   buttonLabel_ghost: { color: colors.textQuiet },
-  buttonLabel_critical: { color: colors.critical },
+  buttonLabel_critical: { color: colors.buttonCritical },
   buttonLabel_inverse: { color: colors.lead },
-  buttonLabelDisabled: { color: colors.textMuted },
+  // Pressed scales the button (web .btn:active). The shared pressed style stays a dim for
+  // rows, toggles and icon buttons.
+  buttonPressed: { transform: [{ scale: 0.97 }] },
   pressed: { opacity: 0.82 },
+
+  skeleton: { height: 14, minWidth: 24, borderRadius: radius.chip, backgroundColor: colors.surfaceRaised },
+
+  // The copy control. It is a quiet outline control, not a filled one: it sits next to the
+  // thing it copies and must not compete with the action on that thing.
+  copyButton: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    paddingHorizontal: space.sm,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  copyButtonLabel: { ...type.label, color: colors.textQuiet },
+  copyButtonLabelCopied: { color: colors.text },
+  copyButtonLabelFailed: { color: colors.critical },
 
   iconButton: {
     // The same 44px floor as the text controls: an icon button is the one control whose

@@ -61,6 +61,13 @@ function enabledControlsMatching(node: TreeRoot, pattern: RegExp): TreeNode[] {
   return controlsMatching(node, pattern).filter(controlEnabled);
 }
 
+// The inbox rows are named by what they open, and that name is an accessible label rather
+// than text on the screen, so they are found by their label.
+function inboxRows(node: TreeRoot): TreeNode[] {
+  return pressableNodes(node).filter(control => typeof control.props.accessibilityLabel === 'string'
+    && (control.props.accessibilityLabel as string).startsWith('Open conversation:'));
+}
+
 async function pressControl(control: TreeNode): Promise<void> {
   const handler = control.props.onClick ?? control.props.onPress ?? control.props.onResponderRelease;
   if (typeof handler !== 'function') throw new Error('the control exposes no press handler');
@@ -596,6 +603,54 @@ test('a new message offers a jump without replacing the selected run while the r
   await act(async () => tree.update(React.createElement(RunsInbox, { ...props, runs: [updated], selectedRun: updated })));
   expect(subtreeText(tree.toJSON())).toContain('1 new message · Jump to latest');
   expect(subtreeText(tree.toJSON())).toContain('Keep the selected run steady.');
+  await unmount(tree);
+});
+
+test('the run list can be searched by name, by brief and by what an agent said', async () => {
+  const { TextInput } = require('react-native');
+  const named = inboxRun('run-named', 'Check the setup screen.', [
+    { id: 'message-1', runId: 'run-named', from: 'Planner', to: 'team', text: 'The onboarding copy needs work.', createdAt: '2026-10-19T08:00:00.000Z', kind: 'handoff' },
+  ]);
+  const other = inboxRun('run-other', 'Tighten the release notes.', [
+    { id: 'message-2', runId: 'run-other', from: 'Builder', to: 'team', text: 'The heading now fits.', createdAt: '2026-10-19T08:00:00.000Z', kind: 'update' },
+  ]);
+  const tree = await mount(React.createElement(RunsInbox, {
+    runs: [named, other],
+    selectedRun: named,
+    busyRunId: null,
+    onSelectRun: jest.fn(),
+    onOpenPlan: jest.fn(),
+    onOpenResults: jest.fn(),
+    onPause: jest.fn(),
+    onResume: jest.fn(),
+    onUpdate: jest.fn(),
+    onStartRun: jest.fn(),
+  }));
+
+  const search = tree.root.findAll(node => node.type === TextInput && node.props.accessibilityLabel === 'Search runs');
+  expect(search).toHaveLength(1);
+  const setQuery = search[0].props.onChangeText as (value: string) => void;
+
+  // By the brief.
+  await act(async () => { setQuery('release'); });
+  let rows = inboxRows(tree.toJSON());
+  expect(rows).toHaveLength(1);
+  expect(subtreeText(rows[0])).toContain('Tighten the release notes.');
+
+  // By what an agent said, which is the other thing a person remembers.
+  await act(async () => { setQuery('onboarding'); });
+  rows = inboxRows(tree.toJSON());
+  expect(rows).toHaveLength(1);
+  expect(subtreeText(rows[0])).toContain('Check the setup screen.');
+
+  // A search that matches nothing says so and offers the way back.
+  await act(async () => { setQuery('nothing here'); });
+  expect(subtreeText(tree.toJSON())).toMatch(/no runs match/i);
+  const clear = controlsMatching(tree.toJSON(), /clear the search/i)[0];
+  if (!clear) throw new Error('an empty search result offers no way back');
+  await pressControl(clear);
+  expect(inboxRows(tree.toJSON())).toHaveLength(2);
+
   await unmount(tree);
 });
 

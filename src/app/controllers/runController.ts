@@ -22,6 +22,7 @@ export function configureRoles(roles: Role[], settings: AgentSettings): Configur
     permissions: settings.agentPermissions[role.id] ?? defaultAgentPermissions,
     rank: settings.agentRanks[role.id] ?? 1,
     memory: settings.agentMemory[role.id] ?? '',
+    provider: settings.agentProviders[role.id],
   }));
 }
 

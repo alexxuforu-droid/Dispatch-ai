@@ -59,6 +59,37 @@ export const WORKSPACE_TOOLS: readonly WorkspaceToolSpec[] = [
 
 const NO_PERMISSIONS: AgentPermissions = { read: false, grep: false, write: false, edit: false };
 
+/**
+ * The tool names that are refused by name, and why.
+ *
+ * An agent reaches for a shell or a delete when it cannot finish something. This app has no
+ * command runner and no way for an agent to delete a file, so these names are refused with the
+ * reason rather than with a generic "unknown tool": the agent is told what it can do instead,
+ * and it does not spend its eight tool rounds retrying the same call.
+ */
+export const REFUSED_TOOLS: Record<string, string> = {
+  delete: 'An agent cannot delete files. Write the file you want instead, and say what should go.',
+  remove: 'An agent cannot delete files. Write the file you want instead, and say what should go.',
+  del: 'An agent cannot delete files. Write the file you want instead, and say what should go.',
+  rm: 'An agent cannot delete files. Write the file you want instead, and say what should go.',
+  rmdir: 'An agent cannot delete folders. Write the files you want instead, and say what should go.',
+  exec: 'An agent cannot run commands. Use the file tools: list, read, grep, write and edit.',
+  run: 'An agent cannot run commands. Use the file tools: list, read, grep, write and edit.',
+  shell: 'An agent cannot run commands. Use the file tools: list, read, grep, write and edit.',
+  cmd: 'An agent cannot run commands. Use the file tools: list, read, grep, write and edit.',
+  powershell: 'An agent cannot run commands. Use the file tools: list, read, grep, write and edit.',
+  shutdown: 'An agent cannot shut down or restart the machine.',
+  restart: 'An agent cannot shut down or restart the machine.',
+  format: 'An agent cannot format a drive.',
+  taskkill: 'An agent cannot stop other programs.',
+};
+
+/** The refusal for a tool name the app refuses on purpose, or undefined when the name is simply unknown. */
+export function refusedToolReason(name: string): string | undefined {
+  return REFUSED_TOOLS[name.trim().toLowerCase()];
+}
+
+
 export function isWorkspaceTool(name: string): name is WorkspaceToolName {
   return WORKSPACE_TOOLS.some(tool => tool.name === name);
 }
@@ -113,6 +144,8 @@ export function toolCallProblem(entry: unknown): string | undefined {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return 'a tool call was not an object';
   const call = entry as Record<string, unknown>;
   if (typeof call.name !== 'string') return 'a tool call had no name';
+  const refused = refusedToolReason(call.name);
+  if (refused) return refused;
   const spec = specFor(call.name);
   if (!spec) return `the tool name "${call.name.slice(0, 40)}" is not one of ${WORKSPACE_TOOLS.map(tool => tool.name).join(', ')}`;
   if (call.path !== undefined && typeof call.path !== 'string') return `the ${spec.name} call has a path that is not a string`;

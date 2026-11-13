@@ -70,9 +70,18 @@ export function useRunFlow(options: RunFlowOptions) {
     setCancelRequested(true); setNotice('Stopping the current run…', 'neutral'); runController.current.abort();
   }, [setNotice]);
 
-  const start = useCallback(async () => {
-    const brief = draft.trim();
-    const refusal = startRunRefusal({ brief, roles, busy: runBusy, providerReady });
+  /**
+   * Plans a run and starts it.
+   *
+   * The brief, the team and the folder can be overridden by the caller. The always-on worker
+   * uses that: it sends its own brief, works alone, and runs in its own folder inside the
+   * project. Without the overrides the composer draft is used, as it always was.
+   */
+  const start = useCallback(async (briefOverride?: string, rolesOverride?: Role[], projectRootOverride?: string): Promise<Run | null> => {
+    const brief = (briefOverride ?? draft).trim();
+    const runRoles = rolesOverride ?? roles;
+    const runRoot = projectRootOverride ?? projectRoot;
+    const refusal = startRunRefusal({ brief, roles: runRoles, busy: runBusy, providerReady });
     if (refusal) {
       if (refusal.outcome === 'needs-team') {
         designReturnAfterRun.current = false;
@@ -84,28 +93,32 @@ export function useRunFlow(options: RunFlowOptions) {
         setNotice('Connect an OpenAI-compatible provider and choose a model in Settings.', 'attention');
         setScreen('settings');
       }
-      return;
+      return null;
     }
     // Same re-entrancy window as approvePlan: runBusy is render-time state, so a double-press
     // passes twice and the second controller orphans the first. Guard on the ref, synchronously.
-    if (runController.current) return;
+    if (runController.current) return null;
     const controller = new AbortController(); runController.current = controller;
-    setCancelRequested(false); setNotice(''); clearCurrent(); setPendingBrief(brief); setDraft(''); setRunBusy(true);
+    setCancelRequested(false); setNotice(''); clearCurrent(); setPendingBrief(brief);
+    // A run started from the composer empties it. A run the app started on its own leaves it
+    // alone, because the person may be typing the next task into it.
+    if (briefOverride === undefined) setDraft('');
+    setRunBusy(true);
     try {
       const profile = await loadProviderProfile();
       const result = await startRun({
-        brief, roles, busy: false, providerReady: true,
+        brief, roles: runRoles, busy: false, providerReady: true,
         live, checkpointPolicy, planningDebate, mission, designReference, designAnnotations, team, agents,
-        profile, projectRoot, signal: controller.signal,
+        profile, projectRoot: runRoot, signal: controller.signal,
         plan: createPlannedRun,
         onPlanned: value => { upsertRun(value); },
         onUpdate: value => { upsertRun(value); },
       });
       if (result.outcome === 'failed') {
         designReturnAfterRun.current = false;
-        setDraft(brief);
+        if (briefOverride === undefined) setDraft(brief);
         setNotice(result.message, 'critical');
-        return;
+        return null;
       }
       if (result.outcome === 'started') {
         // The run freezes the policy it was planned with, so a toggle flipped between planning
@@ -113,12 +126,15 @@ export function useRunFlow(options: RunFlowOptions) {
         const planned: Run = { ...result.run, policy: snapshotRunPolicy(live) };
         upsertRun(planned);
         void saveRunSnapshot(planned).catch(() => setNotice('Could not save this run update on the device.', 'critical'));
-        clearBriefContext();
+        if (briefOverride === undefined) clearBriefContext();
+        return planned;
       }
+      return null;
     } catch (error) {
       designReturnAfterRun.current = false;
-      setDraft(brief);
+      if (briefOverride === undefined) setDraft(brief);
       setNotice(controller.signal.aborted ? 'Planning stopped. Your task is back in the composer.' : error instanceof Error ? error.message : 'The run could not be started.', controller.signal.aborted ? 'neutral' : 'critical');
+      return null;
     } finally {
       if (runController.current === controller) runController.current = null;
       setRunBusy(false); setPendingBrief(''); setCancelRequested(false);
@@ -160,7 +176,7 @@ export function useRunFlow(options: RunFlowOptions) {
 
   const undo = useCallback(async (changeId: string, targetRun: Run | null = current) => {
     const result = await undoCodeChange({
-      run: targetRun, changeId, projectRoot,
+      run: targetRun, changeId, projectRoot: targetRun?.projectRoot || projectRoot,
       applyFile: applyProjectFile,
       removeFile: removeProjectFile,
     });
@@ -178,7 +194,7 @@ export function useRunFlow(options: RunFlowOptions) {
     setApplyingChanges(currentIds => [...currentIds, changeId]);
     try {
       const result = await applyCodeChange({
-        run: targetRun, changeId, projectRoot, applying: applyingChanges.includes(changeId),
+        run: targetRun, changeId, projectRoot: targetRun?.projectRoot || projectRoot, applying: applyingChanges.includes(changeId),
         applyFile: applyProjectFile,
         removeFile: removeProjectFile,
         // A proposal that touches more than one file is written as one unit, and the run
@@ -214,8 +230,20 @@ export function useRunFlow(options: RunFlowOptions) {
     logHumanDecision(updated, { action: 'apply', changeId: artifactId });
   }, [updateRun]);
 
-  const resetPendingBrief = useCallback(() => setPendingBrief(''), []);
+  /**
+   * Starts a turn the app runs on its own and approves its plan.
+   *
+   * The always-on worker has nobody to approve its plan, so it approves itself. It uses its
+   * own brief, its own team and its own folder, and it leaves the person's draft alone.
+   */
+  const startAndApprove = useCallback(async (brief: string, rolesForTurn: Role[], projectRootForTurn: string): Promise<Run | null> => {
+    const planned = await start(brief, rolesForTurn, projectRootForTurn);
+    if (!planned) return null;
+    await approve(planned);
+    return planned;
+  }, [start, approve]);
 
+  const resetPendingBrief = useCallback(() => setPendingBrief(''), []);
   const commitPlanTitle = useCallback((itemId: string, title: string) => {
     if (!current || current.status !== 'queued' || !title.trim()) return;
     const updated = { ...current, items: current.items.map(item => item.id === itemId ? { ...item, title: title.trim().slice(0, 180) } : item), updatedAt: new Date().toISOString() };
@@ -230,6 +258,7 @@ export function useRunFlow(options: RunFlowOptions) {
     applyingChanges,
     startRun: start,
     approvePlan: approve,
+    startAndApprove,
     applyCodeChange: apply,
     undoCodeChange: undo,
     rejectCodeChange: reject,

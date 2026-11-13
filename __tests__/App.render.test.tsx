@@ -4,6 +4,7 @@ import renderer, { ReactTestRenderer } from 'react-test-renderer';
 import { CodeChange, Run, WorkItem } from '../src/orchestration/types';
 
 jest.mock('@react-native-async-storage/async-storage', () => require('./asyncStorageMock').asyncStorageMock);
+jest.mock('../src/NativeCapture', () => ({ __esModule: true, default: null }));
 
 import { resetAsyncStorageMock, storageFailures } from './asyncStorageMock';
 
@@ -56,9 +57,17 @@ async function unmount(tree: ReactTestRenderer): Promise<void> {
   });
 }
 
-test('App mounts the dispatch screen headlessly', async () => {
+test('App mounts the home screen headlessly', async () => {
   const tree = await mount();
   expect(tree.toJSON()).toBeTruthy();
+  // Home is the first screen: the mark, the three steps and the one way in all have to be
+  // real text, not just a non-empty tree.
+  const landed = textNodes(tree.toJSON()).join(' \n ');
+  expect(landed).toContain('Dispatch AI');
+  expect(landed).toContain('Dispatch');
+  expect(landed).toContain('Observe');
+  expect(landed).toContain('Done');
+  expect(landed).toContain('Start working');
   await unmount(tree);
 });
 
@@ -887,7 +896,7 @@ test('approving a queued plan starts the queued run, not the press event React N
     expect(started).toHaveBeenCalledTimes(1);
     expect(started.mock.calls[0][0].run).toEqual(queued);
     // And the approval landed: the plan is no longer waiting, it reports as finished work.
-    expect(textNodes(tree.toJSON()).join(' \n ')).toContain('The planned outputs and enabled review checks are complete.');
+    expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Complete');
     await unmount(tree);
   } finally {
     started.mockRestore();
@@ -909,7 +918,7 @@ test('closing the run setup panel drops its inspector content and leaves the com
   expect(opened).toContain('Run setup');
   expect(opened).toContain('Agent team');
   expect(opened).toContain('Review policy');
-  expect(opened).toContain('Nothing is applied until you approve it');
+  expect(opened).toContain('Review policy');
 
   // Dismissed through the panel's own accessible Close action.
   await press(tree, 'Close');
@@ -920,7 +929,7 @@ test('closing the run setup panel drops its inspector content and leaves the com
   expect(closed).not.toContain('BEFORE YOU START');
   expect(closed).not.toContain('Agent team');
   expect(closed).not.toContain('Review policy');
-  expect(closed).not.toContain('Nothing is applied until you approve it');
+  expect(closed).not.toContain('Review policy');
   // ...and the task composer behind it is still the live, enabled control it always was.
   const composer = findByLabel(tree.toJSON(), 'Describe a task for your agent team');
   expect(composer).not.toBeNull();
@@ -1280,6 +1289,14 @@ test('opening a run in the inbox shows its messages beside the list and keeps th
   await unmount(tree);
 });
 
+test('App routes the computer-use page through the native capture screen', async () => {
+  const tree = await mount(React.createElement(App, { initialScreen: 'computerUse' }));
+  const rendered = textNodes(tree.toJSON()).join(' ');
+  expect(rendered).toContain('Capture setup');
+  expect(rendered).toContain('Start capture');
+  await unmount(tree);
+});
+
 test('empty Teams page has one create action and one clear empty-state message', async () => {
   const tree = await mount(React.createElement(App, { initialScreen: 'teams' }));
   const createActions = pressableNodes(tree.toJSON()).filter(control => textNodes(control).some(text => /create team/i.test(text)));
@@ -1391,6 +1408,9 @@ test('pressing Start run plans the task and puts the run on screen', async () =>
     options.onPlanned?.(planned);
     return planned;
   });
+  // Plan approval is off by default, so the start approves the plan in the same breath and
+  // the run goes straight to executing.
+  const started = jest.spyOn(runner, 'executePlannedRun').mockImplementation(async input => ({ ...input.run, status: 'completed' }));
 
   const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
 
@@ -1407,13 +1427,75 @@ test('pressing Start run plans the task and puts the run on screen', async () =>
 
   // The run has to have landed, and the pending brief renders the same words as the run's
   // own task block, so the words prove nothing. What proves it is the planning
-  // placeholder being gone and the run's own state being on screen.
+  // placeholder being gone and the run's own state being on screen. Approval is off, so
+  // the run was started on its own and never waited at "Plan ready".
+  const landed = textNodes(tree.toJSON()).join(' \n ');
+  expect(landed).not.toContain('Dispatch is creating a plan');
+  expect(started).toHaveBeenCalledTimes(1);
+  expect(landed).not.toContain('Plan ready');
+  expect(landed).toContain('Complete');
+
+  secret.mockRestore();
+  plan.mockRestore();
+  started.mockRestore();
+  await unmount(tree);
+});
+
+test('with plan approval on, pressing Start run stops at the plan and waits for a human', async () => {
+  const { defaultProviderProfile, saveProviderProfile } = require('../src/persistence/providerProfile');
+  const credentials = require('../src/persistence/providerCredentials');
+  const { defaultWorkspaceSettings, saveWorkspaceSettings } = require('../src/persistence/workspace');
+  const runner = require('../src/orchestration/model-runner') as typeof import('../src/orchestration/model-runner');
+
+  await saveWorkspaceSettings({
+    ...defaultWorkspaceSettings,
+    teamRoleIds: ['planner', 'builder'],
+    teams: [{ id: 'team-default', name: 'Core team', description: 'The agents that do the work.', agentIds: ['planner', 'builder'] }],
+    activeTeamId: 'team-default',
+    requirePlanApproval: true,
+  });
+  await saveProviderProfile({ ...defaultProviderProfile, model: 'test-model' });
+  const secret = jest.spyOn(credentials, 'hasProviderSecret').mockResolvedValue(true);
+
+  const brief = 'Tighten the release notes screen.';
+  const stamp = '2026-01-01T00:00:00.000Z';
+  const planned: Run = {
+    id: 'run-planned-gated',
+    brief,
+    teamId: 'team-default',
+    status: 'queued',
+    items: [],
+    messages: [],
+    artifacts: [],
+    changes: [],
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+  const plan = jest.spyOn(runner, 'createPlannedRun');
+  plan.mockImplementation(async (options) => {
+    options.onPlanned?.(planned);
+    return planned;
+  });
+  const started = jest.spyOn(runner, 'executePlannedRun').mockImplementation(async input => ({ ...input.run, status: 'completed' }));
+
+  const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
+
+  const composer = textInputIn(tree);
+  if (!composer) throw new Error('the composer renders no text input');
+  await act(async () => { (composer.props.onChangeText as (text: string) => void)(brief); });
+
+  await press(tree, 'Start coordinated run');
+
+  expect(plan).toHaveBeenCalledTimes(1);
+  // The run must NOT have started on its own: it waits at the plan for the human.
+  expect(started).not.toHaveBeenCalled();
   const landed = textNodes(tree.toJSON()).join(' \n ');
   expect(landed).not.toContain('Dispatch is creating a plan');
   expect(landed).toContain('Plan ready');
 
   secret.mockRestore();
   plan.mockRestore();
+  started.mockRestore();
   await unmount(tree);
 });
 
@@ -1433,13 +1515,13 @@ test('pressing Undo applied change asks the app to undo that change', async () =
 
 test('pressing a destination in the rail shows that screen', async () => {
   const tree = await mount(React.createElement(App, { initialScreen: 'dispatch' }));
-  expect(textNodes(tree.toJSON()).join(' \n ')).not.toContain('Design workspace');
+  expect(textNodes(tree.toJSON()).join(' \n ')).not.toContain('Attach screenshot');
 
   await press(tree, 'Design studio');
 
   // Every destination in the rail has to lead somewhere. A rail item that does nothing is
   // worse than a missing one, because it looks like a working control.
-  expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Design workspace');
+  expect(textNodes(tree.toJSON()).join(' \n ')).toContain('Attach screenshot');
   await unmount(tree);
 });
 

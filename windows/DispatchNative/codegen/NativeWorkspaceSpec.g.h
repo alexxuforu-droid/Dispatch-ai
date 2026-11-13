@@ -23,11 +23,12 @@ struct WorkspaceSpec : winrt::Microsoft::ReactNative::TurboModuleSpec {
       Method<void(std::string, std::string, std::string, double, Promise<std::string>) noexcept>{3, L"grepWorkspaceText"},
       Method<void(std::string, std::string, std::string, std::string, bool, Promise<std::string>) noexcept>{4, L"applyWorkspaceFile"},
       Method<void(std::string, std::string, std::string, Promise<std::string>) noexcept>{5, L"removeWorkspaceFile"},
-      Method<void(Promise<std::string>) noexcept>{6, L"pickDesignReferenceImage"},
-      Method<void(std::string, Promise<std::string>) noexcept>{7, L"readDesignReferenceImage"},
-      Method<void(std::string, std::string, Promise<std::string>) noexcept>{8, L"saveGeneratedImage"},
-      Method<void(std::string, std::string, Promise<std::optional<std::string>>) noexcept>{9, L"saveExistingFileAs"},
-      Method<void(std::string, std::string, Promise<std::optional<std::string>>) noexcept>{10, L"saveTextAs"},
+      Method<void(std::string, std::string, Promise<std::string>) noexcept>{6, L"ensureWorkspaceDirectory"},
+      Method<void(Promise<std::string>) noexcept>{7, L"pickDesignReferenceImage"},
+      Method<void(std::string, Promise<std::string>) noexcept>{8, L"readDesignReferenceImage"},
+      Method<void(std::string, std::string, Promise<std::string>) noexcept>{9, L"saveGeneratedImage"},
+      Method<void(std::string, std::string, Promise<std::optional<std::string>>) noexcept>{10, L"saveExistingFileAs"},
+      Method<void(std::string, std::string, Promise<std::optional<std::string>>) noexcept>{11, L"saveTextAs"},
   };
 
   template <class TModule>
@@ -66,26 +67,31 @@ struct WorkspaceSpec : winrt::Microsoft::ReactNative::TurboModuleSpec {
           "    REACT_METHOD(removeWorkspaceFile) static void removeWorkspaceFile(std::string rootPath, std::string relativePath, std::string expectedText, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n");
     REACT_SHOW_METHOD_SPEC_ERRORS(
           6,
+          "ensureWorkspaceDirectory",
+          "    REACT_METHOD(ensureWorkspaceDirectory) void ensureWorkspaceDirectory(std::string rootPath, std::string relativePath, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n"
+          "    REACT_METHOD(ensureWorkspaceDirectory) static void ensureWorkspaceDirectory(std::string rootPath, std::string relativePath, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n");
+    REACT_SHOW_METHOD_SPEC_ERRORS(
+          7,
           "pickDesignReferenceImage",
           "    REACT_METHOD(pickDesignReferenceImage) void pickDesignReferenceImage(::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n"
           "    REACT_METHOD(pickDesignReferenceImage) static void pickDesignReferenceImage(::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n");
     REACT_SHOW_METHOD_SPEC_ERRORS(
-          7,
+          8,
           "readDesignReferenceImage",
           "    REACT_METHOD(readDesignReferenceImage) void readDesignReferenceImage(std::string uri, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n"
           "    REACT_METHOD(readDesignReferenceImage) static void readDesignReferenceImage(std::string uri, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n");
     REACT_SHOW_METHOD_SPEC_ERRORS(
-          8,
+          9,
           "saveGeneratedImage",
           "    REACT_METHOD(saveGeneratedImage) void saveGeneratedImage(std::string base64Png, std::string fileName, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n"
           "    REACT_METHOD(saveGeneratedImage) static void saveGeneratedImage(std::string base64Png, std::string fileName, ::React::ReactPromise<std::string> &&result) noexcept { /* implementation */ }\n");
     REACT_SHOW_METHOD_SPEC_ERRORS(
-          9,
+          10,
           "saveExistingFileAs",
           "    REACT_METHOD(saveExistingFileAs) void saveExistingFileAs(std::string sourcePath, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n"
           "    REACT_METHOD(saveExistingFileAs) static void saveExistingFileAs(std::string sourcePath, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n");
     REACT_SHOW_METHOD_SPEC_ERRORS(
-          10,
+          11,
           "saveTextAs",
           "    REACT_METHOD(saveTextAs) void saveTextAs(std::string text, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n"
           "    REACT_METHOD(saveTextAs) static void saveTextAs(std::string text, std::string suggestedName, ::React::ReactPromise<std::optional<std::string>> &&result) noexcept { /* implementation */ }\n");

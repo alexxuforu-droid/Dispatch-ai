@@ -21,6 +21,7 @@ export const pickersStyles = StyleSheet.create({
   customRoleEditor: { marginTop: space.lg, padding: space.md, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
   customRoleHeading: { ...type.label, color: colors.text, marginBottom: space.md },
   customRoleKinds: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginBottom: space.md },
+  customRoleNote: { ...type.meta, color: colors.textMuted, marginTop: space.xs, marginBottom: space.md },
   modalFooter: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: space.md },
   modalSelection: { ...type.meta, color: colors.textMuted },
   providerInput: { ...type.body, minHeight: 44, paddingHorizontal: space.md, borderRadius: radius.control, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, color: colors.text },

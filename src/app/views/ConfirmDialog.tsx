@@ -20,7 +20,7 @@ import { Button } from '../../ui';
 export function ConfirmDialog({ visible, title, body, confirmLabel, cancelLabel = 'Cancel', destructive = true, onConfirm, onCancel }: {
   visible: boolean;
   title: string;
-  body: string;
+  body?: string;
   /** The action, in the words the person would use for it. */
   confirmLabel: string;
   cancelLabel?: string;
@@ -33,7 +33,7 @@ export function ConfirmDialog({ visible, title, body, confirmLabel, cancelLabel 
     <View style={styles.backdrop} {...keyHandlerProps(event => { if (isEscapeEvent(event)) onCancel(); })}>
       <View style={styles.dialog} accessibilityViewIsModal accessibilityRole="alert">
         <Text style={styles.title}>{title}</Text>
-        <Text style={styles.body}>{body}</Text>
+        {body ? <Text style={styles.body}>{body}</Text> : null}
         <View style={styles.actions}>
           <Button label={cancelLabel} onPress={onCancel} variant="secondary" />
           <FocusPressable

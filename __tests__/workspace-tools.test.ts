@@ -10,8 +10,10 @@ import {
   WORKSPACE_TOOLS,
   isWorkspaceTool,
   permissionToolList,
+  refusedToolReason,
   specFor,
   toolAllowed,
+  toolCallProblem,
   toolPolicyFor,
 } from '../src/orchestration/workspaceTools';
 import type { AgentPermissions } from '../src/orchestration/types';
@@ -91,5 +93,31 @@ describe('toolPolicyFor', () => {
     const policy = toolPolicyFor({ enabled: true, permissions: all, hasProjectRoot: true });
     expect(policy).toContain('untrusted reference data');
     expect(policy).toContain('Changes are staged for review, never written to disk');
+  });
+});
+
+describe('the refused tool names', () => {
+  it('refuses deleting and command running by name, with the reason', () => {
+    expect(refusedToolReason('delete')).toContain('cannot delete');
+    expect(refusedToolReason('rm')).toContain('cannot delete');
+    expect(refusedToolReason('exec')).toContain('cannot run commands');
+    expect(refusedToolReason('powershell')).toContain('cannot run commands');
+    expect(refusedToolReason('shutdown')).toContain('cannot shut down');
+  });
+
+  it('matches the name whatever its case and spacing', () => {
+    expect(refusedToolReason('  DELETE ')).toBe(refusedToolReason('delete'));
+  });
+
+  it('leaves the real tools alone', () => {
+    expect(refusedToolReason('read')).toBeUndefined();
+    expect(refusedToolReason('write')).toBeUndefined();
+  });
+
+  it('is what a refused call is answered with, before the unknown-tool message', () => {
+    expect(toolCallProblem({ name: 'delete', path: 'a.txt' })).toContain('cannot delete');
+    expect(toolCallProblem({ name: 'exec' })).toContain('cannot run commands');
+    // An ordinary unknown tool still gets the list of real ones.
+    expect(toolCallProblem({ name: 'teleport' })).toContain('is not one of');
   });
 });

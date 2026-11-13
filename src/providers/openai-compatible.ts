@@ -1,4 +1,4 @@
-import { loadProviderSecret } from '../persistence/providerCredentials';
+import { loadProviderSecret, WORKSPACE_SECRET_ID } from '../persistence/providerCredentials';
 import { ProviderProfile } from '../persistence/providerProfile';
 
 export type ChatContentPart =
@@ -125,7 +125,7 @@ export const providerModelCatalog = new ModelCatalogCache();
 // The one and only /models call in the codebase. Test-the-connection and the refresh
 // button both come through here, so there is a single networking path to reason about.
 export async function fetchModelIds(profile: ProviderProfile): Promise<string[]> {
-  const key = await loadProviderSecret('openai-compatible');
+  const key = await loadProviderSecret(profile.secretId ?? WORKSPACE_SECRET_ID);
   if (!key) throw new Error('Add an API key first.');
   const endpoint = normalizeProviderEndpoint(profile.endpoint);
   const response = await fetchWithTimeout(`${endpoint}/models`, { headers: { Authorization: `Bearer ${key}` } }, MODELS_FETCH_TIMEOUT_MS);
@@ -211,7 +211,7 @@ export async function testProviderConnection(profile: ProviderProfile): Promise<
 }
 
 export async function completeChat(profile: ProviderProfile, messages: ChatMessage[], signal?: AbortSignal): Promise<{ content: string; usage: ProviderUsage; model: string }> {
-  const key = await loadProviderSecret('openai-compatible');
+  const key = await loadProviderSecret(profile.secretId ?? WORKSPACE_SECRET_ID);
   if (!key) throw new Error('Connect a model provider in Settings before starting a run.');
   const model = profile.model.trim();
   if (!model) throw new Error('Choose a model in Settings before starting a run.');
@@ -238,7 +238,7 @@ export async function completeChat(profile: ProviderProfile, messages: ChatMessa
 }
 
 export async function generateImage(profile: ProviderProfile, prompt: string, signal?: AbortSignal): Promise<string> {
-  const key = await loadProviderSecret('openai-compatible');
+  const key = await loadProviderSecret(profile.secretId ?? WORKSPACE_SECRET_ID);
   if (!key) throw new Error('Connect a model provider in Settings before generating an image.');
   const imageModel = profile.imageModel.trim();
   if (!imageModel) throw new Error('Set an image-generation model in Settings to create image files.');

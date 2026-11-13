@@ -3,7 +3,7 @@ import { ProviderProfile } from '../persistence/providerProfile';
 import { Coordinator } from './coordinator';
 import { EventStore } from './event-store';
 import { PersistentRunEventStore, saveRunSnapshot } from '../persistence/runStore';
-import { Agent, AgentPermissions, DesignAnnotation, Run, RunMission, Team } from './types';
+import { Agent, AgentPermissions, AgentProvider, DesignAnnotation, Run, RunMission, Team } from './types';
 import { readDesignReferenceImage } from '../persistence/workspaceProject';
 import { clearGeneratedImages } from '../persistence/generatedImageCache';
 import { ModelAgentExecutor } from './executor';
@@ -32,8 +32,8 @@ export async function steerActiveRun(runId: string, text: string): Promise<boole
   return liveRunControls.get(runId)?.(clean) ?? false;
 }
 
-export function makeTeam(roles: { id: string; label: string; detail: string; modelId?: string; avatarId?: number; rank?: number; kinds?: Agent['kinds']; permissions?: AgentPermissions; memory?: string }[], teamId = 'personal-team', teamName = 'My agent team', playbook = '', debate = false): Team {
-  const agents: Agent[] = roles.map(role => ({ id: role.id, name: role.label, role: role.detail, modelId: role.modelId?.trim() || undefined, avatarId: role.avatarId, rank: role.rank ?? 1, kinds: role.kinds ?? capabilities[role.id] ?? [], instructions: role.detail, memory: role.memory?.trim().slice(0, 3000), permissions: role.permissions ?? noPermissions }));
+export function makeTeam(roles: { id: string; label: string; detail: string; modelId?: string; avatarId?: number; rank?: number; kinds?: Agent['kinds']; permissions?: AgentPermissions; memory?: string; provider?: AgentProvider }[], teamId = 'personal-team', teamName = 'My agent team', playbook = '', debate = false): Team {
+  const agents: Agent[] = roles.map(role => ({ id: role.id, name: role.label, role: role.detail, modelId: role.modelId?.trim() || undefined, avatarId: role.avatarId, rank: role.rank ?? 1, kinds: role.kinds ?? capabilities[role.id] ?? [], instructions: role.detail, memory: role.memory?.trim().slice(0, 3000), permissions: role.permissions ?? noPermissions, provider: role.provider }));
   if (!agents.length) throw new Error('Assign at least one agent before starting a run.');
   return { id: teamId, name: teamName, agents, playbook: playbook.trim().slice(0, 3000), debate };
 }
@@ -63,7 +63,7 @@ export class RunEventRelay implements EventStore {
 function cloneRun(run: Run): Run { return JSON.parse(JSON.stringify(run)) as Run; }
 
 type RunInput = {
-  brief: string; roles: { id: string; label: string; detail: string; modelId?: string; avatarId?: number; rank?: number; permissions?: AgentPermissions; kinds?: Agent['kinds']; memory?: string }[]; teamId?: string; teamName?: string; teamPlaybook?: string; planningDebate?: boolean; checkpointPolicy?: Run['checkpointPolicy']; maxConcurrency?: number; plugins?: PluginFlags; profile: ProviderProfile; projectRoot: string; mission?: RunMission; designReferenceUri?: string; designReferenceMime?: string; designAnnotations?: DesignAnnotation[];
+  brief: string; roles: { id: string; label: string; detail: string; modelId?: string; avatarId?: number; rank?: number; permissions?: AgentPermissions; kinds?: Agent['kinds']; memory?: string; provider?: AgentProvider }[]; teamId?: string; teamName?: string; teamPlaybook?: string; planningDebate?: boolean; checkpointPolicy?: Run['checkpointPolicy']; maxConcurrency?: number; plugins?: PluginFlags; profile: ProviderProfile; projectRoot: string; mission?: RunMission; designReferenceUri?: string; designReferenceMime?: string; designAnnotations?: DesignAnnotation[];
   reviewCode: boolean; reviewImages: boolean; peerApprovalEnabled?: boolean; onPlanned?: (run: Run) => void; onUpdate: (run: Run) => void; signal?: AbortSignal;
 };
 
@@ -77,6 +77,7 @@ export async function createPlannedRun(input: RunInput): Promise<Run> {
   const coordinator = new Coordinator(events, new ModelAgentExecutor(input.profile, input.projectRoot, plugins, reference), new ModelRunReviewer(input.profile, team, input.reviewCode, input.reviewImages, input.projectRoot, plugins, input.peerApprovalEnabled, undefined, async () => {}), { request: async () => undefined }, { maxConcurrency: input.maxConcurrency });
   const run = await coordinator.create(input.brief, team, plan);
   run.teamPlaybook = team.playbook; run.checkpointPolicy = input.checkpointPolicy ?? 'plan-only';
+  run.projectRoot = input.projectRoot;
   run.mission = input.mission;
   run.designReferenceUri = input.designReferenceUri;
   run.designReferenceMime = input.designReferenceMime ?? image?.mimeType;
@@ -92,6 +93,9 @@ export async function createPlannedRun(input: RunInput): Promise<Run> {
 export async function executePlannedRun(input: Omit<RunInput, 'brief' | 'onPlanned'> & { run: Run }): Promise<Run> {
   if (!['queued', 'cancelled', 'failed', 'needs-approval'].includes(input.run.status)) throw new Error('This run is not waiting to start or resume.');
   const plugins = input.plugins ?? defaultPluginFlags;
+  // The run remembers the folder it was created against. The always-on worker runs in its own
+  // folder, and its files have to be written there, not in the person's project.
+  const projectRoot = input.run.projectRoot || input.projectRoot;
   const team = input.run.agentProfiles?.length
     ? { id: input.run.teamId, name: 'Saved run team', agents: input.run.agentProfiles, playbook: input.run.teamPlaybook }
     : makeTeam(input.roles.map(role => ({ ...role, modelId: input.run.agentModelIds?.[role.id] ?? role.modelId })), input.run.teamId, 'Saved run team', input.run.teamPlaybook);
@@ -110,7 +114,7 @@ export async function executePlannedRun(input: Omit<RunInput, 'brief' | 'onPlann
     await events.append({ runId: input.run.id, type: 'agent.message', payload: message, at });
     return true;
   });
-  const coordinator = new Coordinator(events, new ModelAgentExecutor(input.profile, input.projectRoot, plugins, reference), new ModelRunReviewer(input.profile, team, input.reviewCode, input.reviewImages, input.projectRoot, plugins, input.peerApprovalEnabled, undefined, async () => { await saveRunSnapshot(input.run); }), { request: async () => undefined }, { maxConcurrency: input.maxConcurrency });
+  const coordinator = new Coordinator(events, new ModelAgentExecutor(input.profile, projectRoot, plugins, reference), new ModelRunReviewer(input.profile, team, input.reviewCode, input.reviewImages, projectRoot, plugins, input.peerApprovalEnabled, undefined, async () => { await saveRunSnapshot(input.run); }), { request: async () => undefined }, { maxConcurrency: input.maxConcurrency });
   try { return await coordinator.execute(input.run, team, input.signal); }
   finally { liveRunControls.delete(input.run.id); clearGeneratedImages(); }
 }

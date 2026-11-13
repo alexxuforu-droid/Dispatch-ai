@@ -1,6 +1,6 @@
 import type { createPlannedRun, executePlannedRun } from '../../orchestration/model-runner';
 import type { ApplyBatchResult, ProjectFileChange } from '../../persistence/workspaceProject';
-import { AgentPermissions } from '../../orchestration/types';
+import { AgentPermissions, AgentProvider } from '../../orchestration/types';
 import { Role } from '../types';
 
 /**
@@ -27,6 +27,8 @@ export type ConfiguredRole = Role & {
   permissions: AgentPermissions;
   rank: number;
   memory: string;
+  /** The endpoint, models and key slot this agent brings, when it brings any. */
+  provider?: AgentProvider;
 };
 
 /** The per-agent settings a team carries, as the workspace stores them. */
@@ -36,6 +38,7 @@ export type AgentSettings = {
   agentPermissions: Record<string, AgentPermissions>;
   agentRanks: Record<string, number>;
   agentMemory: Record<string, string>;
+  agentProviders: Record<string, AgentProvider>;
 };
 
 /**

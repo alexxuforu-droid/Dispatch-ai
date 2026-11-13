@@ -17,11 +17,26 @@ const { dependencyConfigWindows } = require('@react-native-windows/cli/lib-commo
  * only when the command actually runs.
  */
 function lazyWindowsCommand(name, description) {
+  const load = () => {
+    try {
+      return require('@react-native-windows/cli').commands.find(candidate => candidate.name === name);
+    } catch {
+      // Import can fail on machines without pwsh.exe; fall back to a bare
+      // command so other CLI commands keep working there.
+      return undefined;
+    }
+  };
   return {
     name,
     description,
+    // The community CLI reads `options` when registering the command so that
+    // option defaults (e.g. --arch x64) are applied by commander. Without this
+    // the platform ends up "undefined" and the solution restore fails.
+    get options() {
+      return load()?.options ?? [];
+    },
     func: (...args) => {
-      const command = require('@react-native-windows/cli').commands.find(candidate => candidate.name === name);
+      const command = load();
       if (!command) throw new Error(`React Native Windows does not provide the "${name}" command.`);
       return command.func(...args);
     },

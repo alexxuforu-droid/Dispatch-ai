@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AgentPermissions, RunMission } from '../orchestration/types';
+import type { AgentPermissions, AgentProvider, AgentSetup, IdleBehaviour, RunMission } from '../orchestration/types';
+import { isSafeFolderName } from '../orchestration/sandbox';
 import { CorruptStorageError, StorageRead, preserveReadableSlot, readJsonSlot } from './storageSafety';
 
 export type BuiltinPluginFlags = { workspaceFiles: boolean; imageGeneration: boolean; codeReview: boolean; visualReview: boolean };
@@ -18,6 +19,27 @@ export type WorkspaceSettings = {
   agentPermissions: Record<string, AgentPermissions>;
   agentRanks: Record<string, number>;
   agentMemory: Record<string, string>;
+  /**
+   * The provider each agent brings: its endpoint, its models and whether it carries its own
+   * API key. The key itself is never here; only the fact that one is saved, in Windows
+   * Credential Manager under that agent's own slot.
+   */
+  agentProviders: Record<string, AgentProvider>;
+  /**
+   * How each agent works on its own: the folder it keeps its work in, and what it makes when
+   * there is nothing to do. An agent with no entry here has no folder of its own and takes
+   * whatever it fancies when it is idle.
+   */
+  agentSetups: Record<string, AgentSetup>;
+  /**
+   * The always-on mode. When it is on and the app is open, one agent keeps working: it is
+   * sent to find something to do, and when there is genuinely nothing to do it paints.
+   */
+  alwaysOn: boolean;
+  /** The agent that works while nothing else is running. Empty means the first on the team. */
+  alwaysOnAgentId: string;
+  /** How many minutes between two idle turns. */
+  alwaysOnMinutes: number;
   plugins: BuiltinPluginFlags;
   workflows: DispatchWorkflow[];
   planningDebate: boolean;
@@ -25,6 +47,13 @@ export type WorkspaceSettings = {
   /** Max wave items started at once; 0 means unlimited (today's behavior). */
   maxConcurrency?: number;
   peerApprovalEnabled: boolean;
+  /**
+   * Whether every run waits for a human to approve its plan. Default OFF: the team starts
+   * as soon as the plan is ready. Like peerApprovalEnabled, only an explicit stored `true`
+   * turns it on, so settings blobs from older versions (which never carried the field)
+   * parse to off, not to on.
+   */
+  requirePlanApproval: boolean;
   automaticCodeReview: boolean;
   automaticImageReview: boolean;
 };
@@ -42,6 +71,11 @@ export const defaultWorkspaceSettings: WorkspaceSettings = {
   agentPermissions: {},
   agentRanks: {},
   agentMemory: {},
+  agentProviders: {},
+  agentSetups: {},
+  alwaysOn: false,
+  alwaysOnAgentId: '',
+  alwaysOnMinutes: 5,
   plugins: { workspaceFiles: true, imageGeneration: true, codeReview: true, visualReview: true },
   workflows: [],
   planningDebate: false,
@@ -54,6 +88,7 @@ export const defaultWorkspaceSettings: WorkspaceSettings = {
   // shape for that. The reader below still honours a stored `true`, so anyone who has already
   // chosen it keeps it.
   peerApprovalEnabled: false,
+  requirePlanApproval: false,
   automaticCodeReview: true,
   automaticImageReview: true,
 };
@@ -96,6 +131,35 @@ export function readWorkspaceSettings(raw: unknown): WorkspaceSettings {
       agentMemory: value.agentMemory && typeof value.agentMemory === 'object' && !Array.isArray(value.agentMemory)
         ? Object.fromEntries(Object.entries(value.agentMemory).filter((entry): entry is [string, string] => typeof entry[1] === 'string').map(([id, memory]) => [id, memory.trim().slice(0, 3000)]))
         : {},
+      // The provider an agent brings. Only the four fields are kept, and the key itself is
+      // not one of them: a saved blob can say an agent has a key, never what it is.
+      agentProviders: value.agentProviders && typeof value.agentProviders === 'object' && !Array.isArray(value.agentProviders)
+        ? Object.fromEntries(Object.entries(value.agentProviders).flatMap(([id, entry]) => {
+          if (!entry || typeof entry !== 'object') return [];
+          const provider = entry as Record<string, unknown>;
+          const endpoint = typeof provider.endpoint === 'string' ? provider.endpoint.trim().slice(0, 300) : '';
+          const model = typeof provider.model === 'string' ? provider.model.trim().slice(0, 120) : '';
+          const imageModel = typeof provider.imageModel === 'string' ? provider.imageModel.trim().slice(0, 120) : '';
+          const ownKey = provider.ownKey === true;
+          if (!endpoint && !model && !imageModel && !ownKey) return [];
+          return [[id, { endpoint, model, imageModel, ownKey } satisfies AgentProvider] as const];
+        }))
+        : {},
+      // How each agent works on its own. The folder name is checked here as well as in the
+      // editor, so a hand-edited settings file cannot name a folder the machine would refuse.
+      agentSetups: value.agentSetups && typeof value.agentSetups === 'object' && !Array.isArray(value.agentSetups)
+        ? Object.fromEntries(Object.entries(value.agentSetups).flatMap(([id, entry]) => {
+          if (!entry || typeof entry !== 'object') return [];
+          const setup = entry as Record<string, unknown>;
+          const folder = typeof setup.folder === 'string' ? setup.folder.trim().slice(0, 60) : '';
+          const idle = ['anything', 'tool', 'picture', 'report', 'game'].includes(String(setup.idle)) ? setup.idle as IdleBehaviour : 'anything';
+          if (!folder && idle === 'anything') return [];
+          return [[id, { folder: isSafeFolderName(folder) ? folder : '', idle } satisfies AgentSetup] as const];
+        }))
+        : {},
+      alwaysOn: value.alwaysOn === true,
+      alwaysOnAgentId: typeof value.alwaysOnAgentId === 'string' ? value.alwaysOnAgentId.slice(0, 80) : '',
+      alwaysOnMinutes: typeof value.alwaysOnMinutes === 'number' && Number.isInteger(value.alwaysOnMinutes) && value.alwaysOnMinutes >= 1 && value.alwaysOnMinutes <= 120 ? value.alwaysOnMinutes : 5,
       plugins: value.plugins && typeof value.plugins === 'object' && !Array.isArray(value.plugins)
         ? { workspaceFiles: (value.plugins as Record<string, unknown>).workspaceFiles !== false, imageGeneration: (value.plugins as Record<string, unknown>).imageGeneration !== false, codeReview: (value.plugins as Record<string, unknown>).codeReview !== false, visualReview: (value.plugins as Record<string, unknown>).visualReview !== false }
         : defaultWorkspaceSettings.plugins,
@@ -115,6 +179,7 @@ export function readWorkspaceSettings(raw: unknown): WorkspaceSettings {
       // `undefined` and every upgraded install silently armed an agent that writes to disk with
       // no human in the path. Absent means absent, not opted-in.
       peerApprovalEnabled: value.peerApprovalEnabled === true,
+      requirePlanApproval: value.requirePlanApproval === true,
       customRoles: Array.isArray(value.customRoles) ? value.customRoles.flatMap(entry => {
         if (!entry || typeof entry !== 'object') return [];
         const role = entry as Record<string, unknown>;

@@ -1,0 +1,50 @@
+import { StyleSheet } from 'react-native';
+import { colors, radius, space, type } from '../../../theme';
+
+export const agentsStyles = StyleSheet.create({
+  // The always-on card sits above the list and the editor, on its own row. It is a setting
+  // for the whole workspace, not for one agent, so it does not belong inside the editor.
+  agentsAlwaysOn: { width: '100%', borderWidth: 1, borderColor: colors.line, borderRadius: radius.card, backgroundColor: colors.surface, padding: space.lg, gap: space.lg },
+  agentsChoice: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: colors.lineStrong,
+    backgroundColor: colors.surface,
+  },
+  agentsChoiceActive: { borderColor: colors.textMuted, backgroundColor: colors.surfaceActive },
+  agentsChoiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  agentsChoiceText: { ...type.meta, color: colors.textQuiet, fontWeight: '600' },
+  agentsChoiceTextActive: { color: colors.text },
+  agentsEditor: { flex: 1, minWidth: 300, gap: space.xxl, paddingBottom: space.page },
+  agentsEditorCard: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.card, backgroundColor: colors.surface, padding: space.lg, gap: space.lg },
+  agentsEditorGrid: { width: '100%', maxWidth: 980, alignSelf: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: space.lg, paddingTop: space.xl },
+  agentsEditorTitle: { ...type.section, color: colors.text },
+  agentsField: { gap: space.xs },
+  agentsFieldRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
+  agentsHeader: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  agentsHeaderMeta: { ...type.meta, color: colors.textMuted, marginTop: space.xs },
+  agentsHeaderName: { ...type.title, color: colors.text },
+  agentsKeyRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, alignItems: 'center' },
+  agentsKindChip: { ...type.meta, color: colors.textQuiet, borderWidth: 1, borderColor: colors.line, borderRadius: radius.chip, paddingHorizontal: space.sm, paddingVertical: space.xs },
+  agentsMemoryInput: { minHeight: 84, textAlignVertical: 'top' },
+  agentsList: { width: 250, gap: space.xs },
+  agentsListWrap: { gap: space.xs, marginTop: space.md },
+  agentsListItem: {
+    minHeight: 56,
+    justifyContent: 'center',
+    paddingHorizontal: space.md,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  agentsListItemActive: { backgroundColor: colors.surfaceActive, borderColor: colors.line },
+  agentsListName: { ...type.bodySmall, color: colors.text, fontWeight: '600' },
+  agentsListMeta: { ...type.meta, color: colors.textMuted, marginTop: space.xs },
+  agentsPage: { flex: 1, padding: space.xl },
+  agentsStatus: { ...type.meta, color: colors.textMuted, marginTop: space.xs },
+  agentsStatusError: { color: colors.critical },
+  agentsStatusGood: { color: colors.lead },
+});

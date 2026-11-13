@@ -62,7 +62,7 @@ export const ESCAPE_KEY = 'Escape';
  * React Native Windows reports the modifier keys with the event, so a handler can tell
  * Enter from Shift+Enter without guessing.
  */
-export type KeyEventLike = { nativeEvent?: { key?: string; shiftKey?: boolean }; key?: string; shiftKey?: boolean };
+export type KeyEventLike = { nativeEvent?: { key?: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean }; key?: string; shiftKey?: boolean; ctrlKey?: boolean; metaKey?: boolean };
 
 /** True when a key event is the Escape key. */
 export function isEscapeEvent(event: KeyEventLike | null | undefined): boolean {
@@ -175,12 +175,13 @@ export function FocusPressable({ children, style, onFocus, onBlur, onPressIn, on
   const flat = StyleSheet.flatten(resolved) ?? {};
   const background = typeof flat.backgroundColor === 'string' ? flat.backgroundColor : undefined;
   const baseFill = toRgba(background ?? 'transparent');
+  const onButtonAccent = background?.toLowerCase() === colors.buttonPrimary.toLowerCase();
   const onAccent = background?.toLowerCase() === colors.lead.toLowerCase();
   const onLight = background ? LIGHT_FILLS.includes(background.toLowerCase()) : false;
   const hasBorder = (flat.borderWidth ?? 0) > 0;
   // The ring follows the fill it sits on: the ink on the lead block, the page colour on a
   // light fill, and the lead colour on a dark surface.
-  const ring = onAccent ? colors.leadInk : onLight ? colors.page : colors.lead;
+  const ring = onButtonAccent ? colors.buttonPrimaryInk : onAccent ? colors.leadInk : onLight ? colors.page : colors.lead;
   // The fill fades to the hover colour and back. It is the control's own background, so it
   // keeps the control's own radius and nothing moves.
   const fill = lift.interpolate({ inputRange: [0, 1], outputRange: [baseFill, toRgba(hoverColour ?? 'rgba(255,255,255,0.10)')] });

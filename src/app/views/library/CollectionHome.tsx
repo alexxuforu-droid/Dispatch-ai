@@ -1,37 +1,36 @@
 import React from 'react';
-import { ScrollView, Text, TextInput, View } from 'react-native';
-import { DispatchIcon, IconName } from '../../../DispatchIcon';
+import { Text, View } from 'react-native';
+import { DispatchIcon } from '../../../DispatchIcon';
 import { colors } from '../../../theme';
-import { defaultAgentPermissions } from '../../../persistence/workspace';
-import { AgentPermissions, Run } from '../../../orchestration/types';
+import { Run } from '../../../orchestration/types';
 import { FocusPressable } from '../../../Reveal';
-import { Toggle } from '../../../ui';
-import { Screen, Role, rankNames } from '../../types';
+import { Screen } from '../../types';
 import { NoticeReporter } from '../../controllers/types';
 import { ArtifactCollection } from './ArtifactCollection';
 import { ReviewCollection } from './ReviewCollection';
-import { AgentAvatar } from '../pickers/AgentAvatar';
 import { styles } from '../styles';
 
-const CollectionHomeImpl = React.memo(function CollectionHome({ screen, roles, agentModels, agentAvatars, agentPermissions, agentRanks, setAgentRank, setAgentAvatar, setAgentModel, setAgentPermission, history, providerReady, onCreate, onUseTeam, onOpenRun, onRemoveRole, onNotice }: { screen: Screen; roles: Role[]; agentModels: Record<string, string>; agentAvatars: Record<string, number>; agentPermissions: Record<string, AgentPermissions>; agentRanks: Record<string, number>; setAgentRank: (roleId: string, rank: number) => void; setAgentAvatar: (roleId: string) => void; setAgentModel: (roleId: string, model: string) => void; setAgentPermission: (roleId: string, key: keyof AgentPermissions, value: boolean) => void; history: Run[]; providerReady: boolean; onCreate: () => void; onUseTeam: () => void; onOpenRun: (run: Run) => void; onRemoveRole?: (roleId: string) => void; onNotice: NoticeReporter }) {
-  const copy: Record<string, { title: string; body: string; action: string; icon: IconName }> = {
-    teams: { title: 'Build a team that works as one.', body: 'Give agents clear roles, shared context, and room to coordinate before they deliver.', action: 'Create a team', icon: 'team' },
-    agents: { title: 'What each agent may do.', body: 'Choose an agent rank and grant only the tools it needs. Qualified senior reviewers can approve and apply lower-ranked agents’ code.', action: 'Choose team roles', icon: 'team' },
-    reviews: { title: history.length ? 'Review follows the work.' : 'Review is part of the work.', body: 'Inspect code findings and image review gates before accepting a result.', action: history.length ? 'Open latest review' : 'Go to Dispatch', icon: 'reviews' },
-    artifacts: { title: history.some(item => item.artifacts.some(artifact => !artifact.supersededAt)) ? 'Work made by your team.' : 'A home for finished work.', body: 'Images, proposals, and review reports stay linked to the run that produced them.', action: 'Start a run', icon: 'files' },
+/**
+ * The library screens that hold finished work: review findings and artifacts.
+ *
+ * Teams and agents moved out of this file. They have their own screens now, and keeping a
+ * second copy here meant two places to change when an agent gained a setting.
+ */
+const CollectionHomeImpl = React.memo(function CollectionHome({ screen, history, onCreate, onOpenRun, onNotice }: { screen: Screen; history: Run[]; onCreate: () => void; onOpenRun: (run: Run) => void; onNotice: NoticeReporter }) {
+  const copy: Record<string, { body: string; action: string }> = {
+    reviews: { body: 'Inspect code findings and image review gates before accepting a result.', action: 'Open latest review' },
+    artifacts: { body: 'Images, proposals, and review reports stay linked to the run that produced them.', action: 'Start a run' },
   };
-  const data = copy[screen] || copy.reviews;
+  const data = copy[screen] ?? copy.reviews;
+  const hasArtifacts = history.some(item => item.artifacts.some(artifact => !artifact.supersededAt));
   return <View style={styles.collectionPage}>
-    <View style={styles.collectionTop}><Text style={styles.collectionBody}>{data.body}</Text>
+    <View style={styles.collectionTop}>
+      <Text style={styles.collectionBody}>{data.body}</Text>
       <FocusPressable accessibilityRole="button" onPress={onCreate} style={({ pressed }) => [styles.primaryAction, pressed && styles.pressed]}><DispatchIcon name="plus" size={17} color={colors.leadInk} /><Text style={styles.primaryActionText}>{data.action}</Text></FocusPressable>
     </View>
-    {screen === 'reviews' && history.length > 0 ? <ReviewCollection runs={history} onOpen={onOpenRun} /> : screen === 'artifacts' && history.some(item => item.artifacts.some(artifact => !artifact.supersededAt)) ? <ArtifactCollection runs={history} onOpen={onOpenRun} onNotice={onNotice} /> : screen === 'teams' && roles.length > 0 ? <View style={styles.savedTeamWrap}>
-      <View style={styles.savedTeamCard}>
-        <View style={styles.savedTeamHeader}><View style={styles.savedTeamIcon}><DispatchIcon name="team" size={19} color={colors.lead} /></View><View style={styles.flexOne}><Text style={styles.savedTeamName}>My agent team</Text><Text style={styles.savedTeamMeta}>{roles.length} assigned {roles.length === 1 ? 'role' : 'roles'} · Local workspace</Text></View><FocusPressable accessibilityRole="button" onPress={onCreate} style={styles.textAction}><Text style={styles.textAction}>Edit team</Text></FocusPressable></View>
-        <View style={styles.savedTeamRoles}>{roles.map((role, index) => <View key={role.id} style={styles.savedRoleRow}><AgentAvatar avatarId={agentAvatars[role.id] ?? index + 1} size={32} /><View style={styles.flexOne}><Text style={styles.savedRoleName}>{role.label}</Text><Text style={styles.savedRoleDetail}>{role.detail}</Text></View><Text style={styles.savedRoleState}>{agentModels[role.id]?.trim() ? 'Custom model' : providerReady ? 'Default model' : 'Provider needed'}</Text>{onRemoveRole ? <FocusPressable accessibilityRole="button" accessibilityLabel={`Remove ${role.label} from the team`} onPress={() => onRemoveRole(role.id)} style={({ pressed }) => [styles.textAction, pressed && styles.pressed]}><Text style={styles.textAction}>Remove</Text></FocusPressable> : null}</View>)}</View>
-        <FocusPressable accessibilityRole="button" onPress={onUseTeam} style={({ pressed }) => [styles.savedTeamAction, pressed && styles.pressed]}><Text style={styles.savedTeamActionText}>Use this team in Dispatch</Text><Text style={styles.promptArrow}>↗</Text></FocusPressable>
-      </View>
-    </View> : screen === 'agents' && roles.length > 0 ? <ScrollView style={styles.agentCollection} contentContainerStyle={styles.agentCollectionContent}>{roles.map((role, index) => { const model = agentModels[role.id] ?? ''; const permissions = agentPermissions[role.id] ?? defaultAgentPermissions; const rank = agentRanks[role.id] ?? 1; const agentTasks = history.flatMap(saved => saved.items).filter(item => item.agentId === role.id); const completedTasks = agentTasks.filter(item => item.status === 'done').length; const flaggedTasks = agentTasks.filter(item => item.status === 'needs-approval').length; const canPeerApprove = role.kinds.includes('code') && role.kinds.includes('review') && rank >= 4; return <View key={role.id} style={styles.agentCard}><View style={styles.agentCardTop}><FocusPressable accessibilityRole="button" accessibilityLabel={`Choose ${role.label} avatar`} onPress={() => setAgentAvatar(role.id)} style={({ pressed }) => [styles.avatarChooseButton, pressed && styles.pressed]}><AgentAvatar avatarId={agentAvatars[role.id] ?? index + 1} size={48} /></FocusPressable><Text style={styles.agentCardStatus}>{model.trim() ? 'Custom model' : 'Workspace default'}</Text></View><Text style={styles.agentCardName}>{role.label}</Text><Text style={styles.agentCardBody}>{role.detail}</Text><Text style={styles.agentPermissionFoot}>Recent work · {completedTasks}/{agentTasks.length} complete · {flaggedTasks} flagged</Text><View style={styles.agentCardDivider} /><Text style={styles.agentCardFoot}>Rank · {rankNames[rank - 1]}</Text><View style={styles.agentRankRow}>{rankNames.map((name, rankIndex) => <FocusPressable key={name} accessibilityRole="radio" accessibilityLabel={`Set ${role.label} rank to ${name}`} accessibilityState={{ checked: rank === rankIndex + 1 }} onPress={() => setAgentRank(role.id, rankIndex + 1)} style={[styles.agentRankOption, rank === rankIndex + 1 && styles.agentRankOptionActive]}><Text style={[styles.agentRankText, rank === rankIndex + 1 && styles.agentRankTextActive]}>{rankIndex + 1}</Text></FocusPressable>)}</View><Text style={styles.agentPermissionFoot}>{canPeerApprove ? 'Senior reviewer: can approve and apply code from lower-ranked agents.' : 'Rank 4+ reviewers can approve code from lower-ranked agents.'}</Text><Text style={styles.agentCardFoot}>Provider model ID</Text><TextInput accessibilityLabel={`${role.label} model ID override`} value={model} onChangeText={value => setAgentModel(role.id, value)} placeholder="Use workspace default" placeholderTextColor={colors.textMuted} style={styles.agentModelInput} maxLength={120} autoCapitalize="none" autoCorrect={false} /><View style={styles.agentCardDivider} /><Text style={styles.agentCardFoot}>PROJECT TOOLS · DEFAULT OFF</Text><View style={styles.agentToolGrid}><Toggle label="Read" detail="Open project files and list folders" value={permissions.read} onChange={value => setAgentPermission(role.id, 'read', value)} /><Toggle label="Grep" detail="Search text in project files" value={permissions.grep} onChange={value => setAgentPermission(role.id, 'grep', value)} /><Toggle label="Write" detail="Create new project files" value={permissions.write} onChange={value => setAgentPermission(role.id, 'write', value)} /><Toggle label="Edit" detail="Stage exact edits to existing files" value={permissions.edit} onChange={value => setAgentPermission(role.id, 'edit', value)} /></View><Text style={styles.agentPermissionFoot}>File changes stay staged until you review and apply them, unless a qualified higher-ranked reviewer approves them.</Text></View>; })}</ScrollView> : <View style={styles.emptyCollection}><View style={styles.emptyIcon}><DispatchIcon name={data.icon} size={22} color={colors.lead} /></View><Text style={styles.emptyTitle}>Nothing here yet</Text><Text style={styles.emptyBody}>Create something from Dispatch to begin. It will stay linked to the work that produced it.</Text></View>}
+    {screen === 'reviews' && history.length > 0 ? <ReviewCollection runs={history} onOpen={onOpenRun} />
+      : screen === 'artifacts' && hasArtifacts ? <ArtifactCollection runs={history} onOpen={onOpenRun} onNotice={onNotice} />
+      : null}
   </View>;
 });
 

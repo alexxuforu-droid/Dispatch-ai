@@ -15,9 +15,11 @@
 import React, { act } from 'react';
 import renderer, { ReactTestRenderer } from 'react-test-renderer';
 import { TextInput } from 'react-native';
+import { Button } from '../src/ui';
 
-import { Run, WorkItem } from '../src/orchestration/types';
+import { CodeChange, Run, WorkItem } from '../src/orchestration/types';
 import { reassignWorkItem, setDependency } from '../src/app/policy/planEditing';
+import { CodeProposalCard } from '../src/app/views/dispatch/CodeProposalCard';
 import { DispatchHome } from '../src/app/views/dispatch/DispatchHome';
 import { RunConversation } from '../src/app/views/dispatch/RunConversation';
 import { Sidebar } from '../src/app/views/shell/Sidebar';
@@ -54,6 +56,11 @@ const planItems: WorkItem[] = [
   { id: 'work-2', title: 'Build it', kind: 'code', agentId: 'builder', dependsOn: ['work-1'], status: 'blocked', artifactIds: [] },
 ];
 
+const codeChange: CodeChange = {
+  id: 'change-1', itemId: 'work-1', path: 'src/example.ts', before: 'old', after: 'new',
+  createOnly: false, createdBy: 'builder', attempt: 1,
+};
+
 function runWith(overrides: Partial<Run> = {}): Run {
   return {
     id: 'run-1',
@@ -75,7 +82,6 @@ function dispatchProps(overrides: Partial<DispatchHomeProps> = {}): DispatchHome
   return {
     draft: 'Ship the thing.',
     setDraft: jest.fn(),
-    onSelectMission: jest.fn(),
     onStart: jest.fn(),
     onApprovePlan: jest.fn(),
     onEditPlanTitle: jest.fn(),
@@ -85,7 +91,6 @@ function dispatchProps(overrides: Partial<DispatchHomeProps> = {}): DispatchHome
     run: null,
     runBusy: false,
     pendingBrief: '',
-    providerReady: true,
     ...overrides,
   };
 }
@@ -152,7 +157,22 @@ test('Shift and Enter in the composer asks for a line break and leaves the run a
 test('the composer says which key starts the run', async () => {
   const tree = await mount(<DispatchHome {...dispatchProps()} />);
 
-  expect(subtreeText(tree.toJSON())).toContain('Enter to run, Shift + Enter for a line break');
+  expect(subtreeText(tree.toJSON())).not.toContain('Enter to run, Shift + Enter for a line break');
+  await unmount(tree);
+});
+
+test('the idle composer uses one clear instruction and consistent buttons', async () => {
+  const tree = await mount(<DispatchHome {...dispatchProps({ onOpenRunSetup: jest.fn() })} />);
+
+  const buttons = tree.root.findAllByType(Button);
+  const button = (label: string) => buttons.find(candidate => candidate.props.label === label);
+  expect(button('Start run')?.props.variant).toBe('primary');
+  expect(button('Project files')?.props.variant).toBe('ghost');
+  expect(button('Run setup')?.props.variant).toBe('ghost');
+  expect(button('Run setup')?.props.accessibilityHint).toBe('Choose the agent team and review policy for this run.');
+  expect(subtreeText(tree.toJSON())).not.toContain('Describe the outcome. Dispatch will propose a plan for your approval.');
+  expect(subtreeText(tree.toJSON())).not.toContain('Choose the outcome, then start a run with your selected team.');
+
   await unmount(tree);
 });
 
@@ -225,6 +245,28 @@ test('the plan editor says why a refused change was refused', async () => {
   const alerts = tree.root.findAll(node => node.props.accessibilityRole === 'alert');
   expect(alerts.length).toBeGreaterThan(0);
   expect(subtreeText(alerts[0] as unknown as TreeRoot)).toMatch(/wait on itself/i);
+  await unmount(tree);
+});
+
+test('a run recovery action uses the same primary button as starting a run', async () => {
+  const tree = await mount(<RunConversation run={runWith({ status: 'needs-approval' })} pendingBrief="" busy={false} onOpenResults={jest.fn()} onApprovePlan={jest.fn()} onEditPlanTitle={jest.fn()} />);
+
+  const revise = tree.root.findAllByType(Button).find(button => button.props.label === 'Revise and continue');
+  expect(revise?.props.variant).toBe('primary');
+  expect(subtreeText(tree.toJSON())).toContain('Team plan');
+  expect(subtreeText(tree.toJSON())).not.toContain('edit the titles, owners, and dependencies before approval');
+
+  await unmount(tree);
+});
+
+test('the code proposal action uses the shared primary button', async () => {
+  const tree = await mount(<CodeProposalCard change={codeChange} itemStatus="done" projectRoot="C:\\work" applying={false} onApply={jest.fn()} />);
+
+  const apply = tree.root.findAllByType(Button).find(button => button.props.accessibilityLabel === 'Apply proposal · src/example.ts');
+  expect(apply?.props.label).toBe('Apply proposal');
+  expect(apply?.props.variant).toBe('primary');
+  expect(apply?.props.disabled).toBe(false);
+
   await unmount(tree);
 });
 

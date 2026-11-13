@@ -38,6 +38,17 @@ export async function applyProjectFile(rootPath: string, relativePath: string, e
   return DispatchWorkspace.applyWorkspaceFile(rootPath, relativePath, expectedText, replacementText, createOnly);
 }
 
+/**
+ * Creates a folder inside the project and returns its full path.
+ *
+ * The folder an agent works in has to exist before a file can be written into it, and the
+ * native layer refuses to create one outside the project, so the boundary holds here too.
+ */
+export async function ensureProjectFolder(rootPath: string, relativePath: string): Promise<string> {
+  if (Platform.OS !== 'windows' || !DispatchWorkspace) throw new Error('Native project folders are unavailable on this platform.');
+  return DispatchWorkspace.ensureWorkspaceDirectory(rootPath, relativePath);
+}
+
 export type ProjectFileChange = { path: string; before: string; after: string; createOnly?: boolean };
 
 export type ApplyBatchResult = {

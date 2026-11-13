@@ -25,6 +25,7 @@ const agents = {
   agentPermissions: {},
   agentRanks: { builder: 3 },
   agentMemory: { builder: 'remember this' },
+  agentProviders: {},
 };
 
 const profile = { endpoint: 'https://example.test/v1', model: 'test-model', imageModel: '' };

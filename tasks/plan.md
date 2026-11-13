@@ -72,6 +72,22 @@ toolchain), deterministic mock collaborators for repeatability.
   policies, templates, compare/replay UI, native e2e (WinAppDriver/FlaUI) on msix,
   signing/updates, a11y pass.
 
+### Immediate release triage — target 2026-11-08
+
+**Must pass before calling the native app release-ready:**
+- **Evidence snapshot — 2026-11-07:** `npm run verify` passed with 35 suites / 451 tests in both Jest configurations; `npm run windows` compiled, deployed, and started PID 21604. G4 remains blocked (see `GATES.md`): provider setup/navigation and app-level capture/action/MP4 playback are unverified. NVIDIA NIM model-list authentication succeeded, but the completion-content check did not, so it is not live-inference evidence. A direct full-solution MSBuild reached packaging but failed on the missing `Microsoft.UniversalCRT.Debug, Version=10.0.22621.0`; use the successful RNW build as the verified build/deploy path. G5 review returned no blockers; its bounded low risks are listed in `GATES.md`. R1–R7 below remain open.
+- [ ] **R1 — Release identity and package:** replace the development publisher identity, confirm the product/package name and version, and build the intended Release MSIX. Acceptance: the artifact installs on a clean supported Windows machine without a development-only certificate.
+- [ ] **R2 — Signed release path:** add a tag-triggered GitHub release workflow that builds and attaches the MSIX plus checksum and notes. Keep signing material in protected CI secrets; never put it in the repo or logs. If signing is not available, explicitly decide and document the supported install path before release.
+- [ ] **R3 — Clean install and upgrade smoke test:** install, first launch, configure a provider through the app, confirm the secret stays in Windows Credential Manager, restart, upgrade, and uninstall on a clean Windows profile. Record the exact tested OS and architecture.
+- [ ] **R4 — Native end-to-end gate:** finish G4 in `GATES.md`: verify first-frame time, observed FPS/drops, action latency and selected-window confinement, then record and play back an MP4. Use a configured provider without reading or copying its credential; document that repeated still-frame vision updates are not continuous video ingestion.
+- [ ] **R5 — Release documentation:** publish concise setup/prerequisite steps, release notes, screenshots, known limitations, and a rollback/reinstall path. Disclose any non-fatal build warnings and unverified flows.
+- [ ] **R6 — Release CI must fail closed:** require the native Release build and package job on release tags. The existing verification workflow may skip its native build when v145 is unavailable, so that skip is not release evidence.
+- [ ] **R7 — Human-facing UI pass:** simplify the high-traffic Dispatch and Computer use screens, check keyboard/focus and supported window sizes, and capture OCU evidence after the page is reachable. Keep behavior and existing product identity intact.
+
+**Separate post-release features (not release blockers unless advertised):**
+- [ ] **T1 — More safe project tools:** add a permissioned, read-only Git status/diff view and an allow-listed test runner in the existing isolated harness. Keep arbitrary shell/network access disabled; record tool inputs, outputs, timeouts, and approvals.
+- [ ] **T2 — Fast browser control:** do a small capability spike first, then choose a persistent browser-control connection (WebView2 DevTools Protocol or another supported browser API) with DOM-backed state and actions. Acceptance: same-tab state/action correlation, origin scoping, explicit approval for external effects, bounded queues/timeouts, and measured first-state/action latency. Keep this separate from desktop frame capture; do not claim video streaming from screenshots.
+
 ## Risks and Mitigations
 | Risk | Impact | Mitigation |
 |------|--------|------------|

@@ -26,6 +26,7 @@ const repoRoot = path.join(__dirname, '..');
  */
 const TOKEN_SCAN_DIRECTORIES = [
   'src/app/views/shell',
+  'src/app/views/home',
   'src/app/views/dispatch',
   'src/app/views/pickers',
   'src/app/views/shared',
@@ -87,6 +88,14 @@ describe('the palette', () => {
     expect(contrast(colors.critical, colors.criticalSurface)).toBeGreaterThanOrEqual(4.5);
   });
 
+  test('the button-only web palette clears its floors', () => {
+    // The ported button spec: a white label on the primary fill, red critical text on the
+    // page, and the ghost hover border as a non-text indicator.
+    expect(contrast(colors.buttonPrimaryInk, colors.buttonPrimary)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.buttonCritical, colors.page)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(colors.buttonGhostHoverBorder, colors.page)).toBeGreaterThanOrEqual(3);
+  });
+
   test('the pairs the interface actually uses clear their floors', () => {
     // The white button and its label, the hover fill under that label, the toast title on
     // the raised surface, the inverse button on the lead block, and the focus ring on a
@@ -99,10 +108,10 @@ describe('the palette', () => {
     expect(contrast(colors.lead, colors.page)).toBeGreaterThanOrEqual(4.5);
   });
 
-  test('surfaces get lighter as they rise, with no shadows to do the work', () => {
+  test('the light ladder runs page to white, the selected row is a shade, and there are no shadows', () => {
     expect(luminance(colors.page)).toBeLessThan(luminance(colors.surface));
     expect(luminance(colors.surface)).toBeLessThan(luminance(colors.surfaceRaised));
-    expect(luminance(colors.surfaceRaised)).toBeLessThan(luminance(colors.surfaceActive));
+    expect(luminance(colors.surfaceActive)).toBeLessThan(luminance(colors.surface));
     const source = fs.readFileSync(path.join(repoRoot, 'src/theme.ts'), 'utf8');
     expect(source).not.toMatch(/shadowColor|boxShadow|elevation/);
   });
@@ -138,7 +147,7 @@ describe('the type scale', () => {
 
 describe('the geometry scales', () => {
   test('one radius per tier', () => {
-    expect(Object.values(radius).sort((a, b) => a - b)).toEqual([4, 6, 8, 12, 999]);
+    expect(Object.values(radius).sort((a, b) => a - b)).toEqual([6, 6, 8, 10, 999]);
   });
 
   test('spacing is multiples of four', () => {

@@ -8,6 +8,7 @@ export interface Spec extends TurboModule {
   grepWorkspaceText(rootPath: string, relativePath: string, query: string, maxResults: number): Promise<string>;
   applyWorkspaceFile(rootPath: string, relativePath: string, expectedText: string, replacementText: string, createOnly: boolean): Promise<string>;
   removeWorkspaceFile(rootPath: string, relativePath: string, expectedText: string): Promise<string>;
+  ensureWorkspaceDirectory(rootPath: string, relativePath: string): Promise<string>;
   pickDesignReferenceImage(): Promise<string>;
   readDesignReferenceImage(uri: string): Promise<string>;
   saveGeneratedImage(base64Png: string, fileName: string): Promise<string>;

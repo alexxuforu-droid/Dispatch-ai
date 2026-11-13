@@ -4,8 +4,8 @@
  * The rules these encode, in order of how much they matter:
  *
  * 1. Neutrals do the work. The surface ladder is a real ladder, so a panel, a card and a
- *    raised control separate by value instead of by border. Surfaces get lighter as they
- *    rise and there are no shadows anywhere.
+ *    raised control separate by value instead of by border. The page is the lightest
+ *    neutral and cards rise to white; the selected row is a shade, not a rise. No shadows.
  * 2. Colour is content, not chrome. The sidebar, the top bar, the tabs, the inputs and the
  *    buttons are neutral. The lead colour lands on one block of content per screen, which
  *    is the thing the person came for.
@@ -19,42 +19,52 @@
  */
 
 export const colors = {
-  // The neutral ladder. Page, then each surface one step lighter than the one below.
-  page: '#0A0B0C',
-  surface: '#141516',
-  surfaceRaised: '#1C1E20',
-  surfaceActive: '#26292B',
-  line: '#2A2D2F',
+  // The neutral ladder, light theme: the page is a soft neutral wash and cards rise to
+  // white; the selected row is the one step darker.
+  page: '#F2F2F5',
+  surface: '#F7F7FA',
+  surfaceRaised: '#FFFFFF',
+  surfaceActive: '#E9EAF0',
+  line: '#E4E5EA',
   // A control boundary has to be visible against its own fill, so this one is a step louder
   // than the hairline between rows.
-  lineStrong: '#6B7074',
+  lineStrong: '#878C99',
 
-  // Text. Near-white on dark, never a palette colour.
-  text: '#F5F5F5',
-  textQuiet: '#A3A3A3',
-  textMuted: '#909599',
-  // The palette. One hue, three jobs, the way the oxfords rules give a three colour
-  // palette: the lead is the one block of content that lands on a screen, the support is
-  // the second block, and the pop is the small mark that needs attention.
-  lead: '#8E8FF0',
+  // Text. Near-black on light, never a palette colour.
+  text: '#14161C',
+  textQuiet: '#575D68',
+  textMuted: '#5F646D',
+  // The palette. One hue, three jobs: the lead is the one block of content that lands on a
+  // screen, the support is the second block, and the pop is the small mark that needs attention.
+  lead: '#0A5CFF',
   // One step deeper, for the hover of a control that is filled with the lead.
-  leadHover: '#7B7CD9',
+  leadHover: '#0949C7',
   // The ink that goes on the lead, and the ink of the inverse button that sits on it.
-  leadInk: '#0A0B0C',
-  support: '#2A2A55',
-  pop: '#C9C9FF',
+  leadInk: '#FFFFFF',
+  support: '#DCE7FF',
+  pop: '#0A5CFF',
 
   // State colours stay separate from the palette, and each one is always paired with a
   // word so that state is never carried by colour alone.
-  attention: '#E9BD79',
-  attentionSurface: '#241C10',
-  critical: '#F49090',
-  criticalSurface: '#2A1618',
+  attention: '#8A5A00',
+  attentionSurface: '#FBF3E0',
+  critical: '#C62F2F',
+  criticalSurface: '#FBE9E7',
   // The destructive button lifted under the pointer: a wash of the critical colour.
-  criticalWash: 'rgba(244, 144, 144, 0.22)',
+  criticalWash: 'rgba(198, 47, 47, 0.12)',
+
+  // Button-only palette, ported from the web button spec (ui/src/styles.css .btn). The fill
+  // follows the lead so the web and native buttons read as one design.
+  buttonPrimary: '#0A5CFF',
+  buttonPrimaryHover: '#0949C7',
+  buttonPrimaryInk: '#FFFFFF',
+  buttonGhostHoverBorder: '#0A5CFF',
+  buttonCritical: '#C62F2F',
+  buttonCriticalBorder: 'rgba(198, 47, 47, 0.45)',
+  buttonCriticalHover: 'rgba(198, 47, 47, 0.08)',
 
   // The scrim behind a modal. The page is still there, it is just not the page any more.
-  scrim: '#0009',
+  scrim: '#14161C59',
 } as const;
 
 export const typography = {
@@ -86,10 +96,10 @@ export const type = {
 
 /** One radius per tier. Nested inner is outer minus the gap. */
 export const radius = {
-  tag: 4,
+  tag: 6,
   chip: 6,
   control: 8,
-  card: 12,
+  card: 10,
   pill: 999,
 } as const;
 

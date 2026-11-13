@@ -2,8 +2,6 @@ import { StyleSheet } from 'react-native';
 import { colors, radius, space, type } from '../../../theme';
 
 export const dispatchStyles = StyleSheet.create({
-  attachButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.xs },
-  attachLabel: { ...type.meta, color: colors.textQuiet },
   chatContent: { flexGrow: 1, paddingHorizontal: space.xxl, paddingTop: space.xxl, paddingBottom: space.xxl },
   chatHero: { width: '100%', maxWidth: 760 },
   chatScroll: { flex: 1 },
@@ -14,6 +12,7 @@ export const dispatchStyles = StyleSheet.create({
   codeProposalDiffRow: { flexDirection: 'row', alignItems: 'flex-start' },
   codeProposalFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm },
   codeProposalFootWrap: { flexWrap: 'wrap' },
+  codeProposalFootActions: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.sm },
   codeProposalHead: { minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: space.md },
   codeProposalLabel: { ...type.meta, color: colors.textQuiet, fontWeight: '700', marginTop: space.xs },
   codeProposalLabelShrink: { flexShrink: 1 },
@@ -33,7 +32,7 @@ export const dispatchStyles = StyleSheet.create({
   composerInput: { ...type.body, lineHeight: 21, minHeight: 68, maxHeight: 132, padding: 0, color: colors.text },
   composerRight: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   composerRightCompact: { flexWrap: 'wrap', flexShrink: 1 },
-  composerTools: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  composerTools: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   conversationBlock: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.card, backgroundColor: colors.surface, paddingHorizontal: space.md, paddingTop: space.md, marginBottom: space.md },
   conversationHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, marginBottom: space.xs },
   conversationItem: { borderTopWidth: 1, borderTopColor: colors.line, paddingVertical: space.md },
@@ -49,9 +48,6 @@ export const dispatchStyles = StyleSheet.create({
   planApproval: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.md, padding: space.md, marginBottom: space.md, borderRadius: radius.control, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surfaceActive },
   planApprovalBody: { ...type.meta, color: colors.textQuiet, marginTop: space.xs },
   planApprovalTitle: { ...type.meta, color: colors.text, fontWeight: '600' },
-  planApproveBusy: { opacity: .6 },
-  planApproveButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.sm, paddingHorizontal: space.md, borderRadius: radius.control, backgroundColor: colors.lead },
-  planApproveText: { ...type.meta, color: colors.page, fontWeight: '700' },
   planBlock: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.card, backgroundColor: colors.surface, paddingHorizontal: space.md, paddingTop: space.md, marginBottom: space.md },
   planBlockTitle: { ...type.meta, color: colors.text, fontWeight: '600', marginBottom: space.xs },
   planChip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: space.md, borderRadius: radius.control, borderWidth: 1, borderColor: colors.lineStrong, backgroundColor: colors.surfaceRaised },
@@ -82,7 +78,6 @@ export const dispatchStyles = StyleSheet.create({
   reviewNotice: { padding: space.md, borderWidth: 1, borderColor: colors.line, borderRadius: radius.control, backgroundColor: colors.attentionSurface },
   reviewNoticeBody: { ...type.meta, color: colors.textQuiet, marginTop: space.xs },
   reviewNoticeTitle: { ...type.meta, color: colors.attention, fontWeight: '600' },
-  runSetupButton: { minHeight: 44, paddingHorizontal: space.sm },
   runStatus: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 25, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.surfaceActive },
   runStatusCancelled: { backgroundColor: colors.surfaceActive },
   runStatusDone: { backgroundColor: colors.surfaceActive },

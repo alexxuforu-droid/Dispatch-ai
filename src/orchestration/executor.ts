@@ -2,6 +2,7 @@ import { ChatContentPart, completeChat, generateImage } from '../providers/opena
 import { recordUsage, toUsageRecord } from '../persistence/usageLedger';
 import { ProviderProfile } from '../persistence/providerProfile';
 import { AgentExecutor } from './coordinator';
+import { resolveAgentProfile } from './agentProvider';
 import { AgentPermissions } from './types';
 import { toolPolicyFor } from './workspaceTools';
 import { parseAgentReply } from './agentReply';
@@ -50,7 +51,7 @@ export class ModelAgentExecutor implements AgentExecutor {
     for (let round = 0; round < (step.kind === 'code' ? 9 : 1); round++) {
       const newMessages = priorMessages.slice(initialMessageCount).filter(message => message.to === 'team' || message.to === agent.name).map(message => `${message.from}: ${message.text}`);
       if (newMessages.length) { chat.push({ role: 'user', content: `New direction from the user or team (follow the original task and permissions):\n${newMessages.join('\n\n')}` }); }
-      const { content: firstReply, usage: stepUsage, model: stepModel } = await withDeadline(signal, this.timeoutMs, deadline => completeChat(profileForAgent(this.profile, agent), chat, deadline));
+      const { content: firstReply, usage: stepUsage, model: stepModel } = await withDeadline(signal, this.timeoutMs, deadline => completeChat(resolveAgentProfile(this.profile, agent), chat, deadline));
       await recordUsage(toUsageRecord({ runId, agentId: agent.id, model: stepModel, usage: stepUsage, phase: 'run' }));
       output = firstReply;
       if (step.kind !== 'code') break;
@@ -68,7 +69,7 @@ export class ModelAgentExecutor implements AgentExecutor {
         chat.push({ role: 'assistant', content: output }, { role: 'user', content: 'The eight tool rounds are complete. Do not call more tools; provide your final summary and handoffs now.' });
         // The eighth-round call is a real provider request that spent real tokens, so it is
         // recorded like any other. Superseded drafts count once each.
-        const { content: finalReply, usage: finalUsage, model: finalModel } = await withDeadline(signal, this.timeoutMs, deadline => completeChat(profileForAgent(this.profile, agent), chat, deadline));
+        const { content: finalReply, usage: finalUsage, model: finalModel } = await withDeadline(signal, this.timeoutMs, deadline => completeChat(resolveAgentProfile(this.profile, agent), chat, deadline));
         await recordUsage(toUsageRecord({ runId, agentId: agent.id, model: finalModel, usage: finalUsage, phase: 'run' }));
         output = finalReply;
         break;
@@ -115,11 +116,6 @@ export class ModelAgentExecutor implements AgentExecutor {
       return { summary: output, messages: [{ to: 'team' as const, kind: 'finding' as const, text: `${output}\n\nImage generation did not produce a saved file: ${detail} This step is held for human review.` }] };
     }
   }
-}
-
-function profileForAgent(profile: ProviderProfile, agent?: { modelId?: string }): ProviderProfile {
-  const model = agent?.modelId?.trim();
-  return model ? { ...profile, model } : profile;
 }
 
 function userContent(text: string, reference?: ChatContentPart): string | ChatContentPart[] {

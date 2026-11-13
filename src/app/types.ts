@@ -1,24 +1,44 @@
 import { IconName } from '../DispatchIcon';
 import { WorkKind } from '../orchestration/types';
 
-export type Screen = 'dispatch' | 'design' | 'teams' | 'agents' | 'runs' | 'reviews' | 'artifacts' | 'workflows' | 'plugins' | 'board' | 'settings' | 'results' | 'usage';
+export type Screen = 'home' | 'dashboard' | 'dispatch' | 'design' | 'computerUse' | 'chat' | 'teams' | 'agents' | 'runs' | 'reviews' | 'artifacts' | 'workflows' | 'plugins' | 'board' | 'settings' | 'results' | 'usage';
 
 export type SavedTeam = { id: string; name: string; description: string; agentIds: string[]; playbook?: string };
 
 export type Role = { id: string; label: string; detail: string; glyph: 'plan' | 'build' | 'review' | 'visual'; kinds: WorkKind[] };
 
 /**
- * The width at which the app stops being a desktop layout.
+ * The three widths the app has.
  *
- * The sidebar folds away, the inspector moves into a panel and the studio stacks its
- * columns below this width, so it is one number for all of them. It lives here because the
- * views and the composition root both need it, and two copies of a threshold drift.
+ * There used to be one threshold, and everything above it got the same desktop layout, so a
+ * window at 1050 was as crowded as a window at 1900 was empty. The app now has three:
+ *
+ * - compact, below COMPACT_WIDTH: the sidebar folds to an icon rail and the run inspector
+ *   opens as a panel over the work;
+ * - medium, up to DOCKED_INSPECTOR_WIDTH: the sidebar shows its labels and the inspector is
+ *   still a panel, because there is not room for both and the work;
+ * - wide: the sidebar, the work and the inspector all have their own column.
+ *
+ * One function answers it, so the shell, the views and the tests cannot each pick their own
+ * number.
  */
-export const COMPACT_WIDTH = 1040;
+export const COMPACT_WIDTH = 900;
+export const DOCKED_INSPECTOR_WIDTH = 1280;
+export type Layout = 'compact' | 'medium' | 'wide';
+
+export function layoutFor(width: number): Layout {
+  if (width < COMPACT_WIDTH) return 'compact';
+  if (width < DOCKED_INSPECTOR_WIDTH) return 'medium';
+  return 'wide';
+}
 
 export const pages: { id: Screen; label: string; icon: IconName; group: 'Work' | 'Team' | 'Library' }[] = [
+  { id: 'home', label: 'Home', icon: 'dispatch', group: 'Work' },
+  { id: 'dashboard', label: 'Dashboard', icon: 'usage', group: 'Work' },
   { id: 'dispatch', label: 'Dispatch', icon: 'dispatch', group: 'Work' },
   { id: 'design', label: 'Design studio', icon: 'spark', group: 'Work' },
+  { id: 'computerUse', label: 'Computer use', icon: 'world', group: 'Work' },
+  { id: 'chat', label: 'Conversation', icon: 'chat', group: 'Work' },
   { id: 'runs', label: 'Runs', icon: 'runs', group: 'Work' },
   { id: 'results', label: 'Results', icon: 'files', group: 'Work' },
   { id: 'board', label: 'Task board', icon: 'board', group: 'Work' },
@@ -42,4 +62,4 @@ export const rankNames = ['Apprentice', 'Associate', 'Specialist', 'Lead', 'Prin
 
 export const sentenceCase = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 
-export const pageTitles: Record<Screen, string> = { dispatch: 'Dispatch', design: 'Design studio', teams: 'Teams', agents: 'Agents', runs: 'Runs', reviews: 'Review findings', artifacts: 'Artifacts', workflows: 'Workflows', plugins: 'Capabilities', board: 'Task board', settings: 'Advanced settings', results: 'Results', usage: 'Usage' };
+export const pageTitles: Record<Screen, string> = { home: 'Home', dashboard: 'Dashboard', dispatch: 'Dispatch', design: 'Design studio', computerUse: 'Computer use', chat: 'Conversation', teams: 'Teams', agents: 'Agents', runs: 'Runs', reviews: 'Review findings', artifacts: 'Artifacts', workflows: 'Workflows', plugins: 'Capabilities', board: 'Task board', settings: 'Advanced settings', results: 'Results', usage: 'Usage' };

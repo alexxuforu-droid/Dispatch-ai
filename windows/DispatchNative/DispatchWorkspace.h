@@ -34,6 +34,9 @@ struct DispatchWorkspace {
   REACT_METHOD(removeWorkspaceFile)
   void removeWorkspaceFile(std::string rootPath, std::string relativePath, std::string expectedText, React::ReactPromise<std::string> &&result) noexcept;
 
+  REACT_METHOD(ensureWorkspaceDirectory)
+  void ensureWorkspaceDirectory(std::string rootPath, std::string relativePath, React::ReactPromise<std::string> &&result) noexcept;
+
   REACT_METHOD(pickDesignReferenceImage)
   void pickDesignReferenceImage(React::ReactPromise<std::string> &&result) noexcept;
 

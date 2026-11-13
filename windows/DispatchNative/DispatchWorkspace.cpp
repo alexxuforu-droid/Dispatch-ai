@@ -263,6 +263,29 @@ std::string removeTextFile(std::string const &rootValue, std::string const &rela
   return relativeValue;
 }
 
+// Creates a folder inside the project and returns its full path.
+//
+// The folder an agent works in is a boundary, not a convenience: the caller gets back the
+// canonical path of a folder that is inside the selected project, and the same rules as the
+// file writer apply (no absolute paths, no parent segments, no reserved Windows names). The
+// created path is checked against the root after creation, so a junction or a race cannot
+// leave the folder outside the project.
+std::string ensureDirectory(std::string const &rootValue, std::string const &relativeValue) {
+  if (rootValue.empty()) throw std::runtime_error("Choose a project folder first.");
+  if (relativeValue.empty() || relativeValue.size() > 220) throw std::runtime_error("A project-relative folder path is required.");
+  const auto root = fs::canonical(toPath(rootValue));
+  if (!fs::is_directory(root)) throw std::runtime_error("The selected project folder is no longer available.");
+  const auto relative = toPath(relativeValue);
+  if (relative.is_absolute() || relative.has_root_name() || relativeValue.find(':') != std::string::npos) throw std::runtime_error("The requested folder must be inside the selected project.");
+  for (const auto &part : relative) if (!safeWindowsSegment(part.wstring())) throw std::runtime_error("The requested folder path contains an unsupported Windows file name.");
+  std::error_code error;
+  fs::create_directories(root / relative, error);
+  if (error) throw std::runtime_error("The folder could not be created inside the selected project.");
+  const auto created = fs::canonical(root / relative, error);
+  if (error || !fs::is_directory(created) || !withinRoot(root, created)) throw std::runtime_error("The requested folder must be inside the selected project.");
+  return created.string();
+}
+
 std::string decodeFileUri(std::string const &uri, std::string const &subject) {
   constexpr char prefix[] = "file:///";
   if (uri.rfind(prefix, 0) != 0 || uri.size() > 2048) throw std::runtime_error(subject + " is not a local file.");
@@ -614,6 +637,15 @@ void DispatchWorkspace::removeWorkspaceFile(std::string rootPath, std::string re
   rememberProjectRoot(rootPath);
   std::thread([rootPath = std::move(rootPath), relativePath = std::move(relativePath), expectedText = std::move(expectedText), result = std::move(result)]() mutable {
     try { result.Resolve(removeTextFile(rootPath, relativePath, expectedText)); }
+    catch (winrt::hresult_error const &error) { result.Reject(winrt::to_string(error.message()).c_str()); }
+    catch (std::exception const &error) { result.Reject(error.what()); }
+  }).detach();
+}
+
+void DispatchWorkspace::ensureWorkspaceDirectory(std::string rootPath, std::string relativePath, React::ReactPromise<std::string> &&result) noexcept {
+  rememberProjectRoot(rootPath);
+  std::thread([rootPath = std::move(rootPath), relativePath = std::move(relativePath), result = std::move(result)]() mutable {
+    try { result.Resolve(ensureDirectory(rootPath, relativePath)); }
     catch (winrt::hresult_error const &error) { result.Reject(winrt::to_string(error.message()).c_str()); }
     catch (std::exception const &error) { result.Reject(error.what()); }
   }).detach();

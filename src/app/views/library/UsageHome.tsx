@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { clearUsage, formatTokenCount, readUsage, readUsageResult, readUsageSummary, rollUpUsage, UsageRecord, UsageSummary } from '../../../persistence/usageLedger';
-import { Button, EmptyState } from '../../../ui';
+import { Button, CopyButton, EmptyState, Skeleton, SkeletonGate } from '../../../ui';
 import { NoticeReporter } from '../../controllers/types';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { styles } from '../styles';
@@ -73,16 +73,36 @@ const UsageHomeImpl = React.memo(function UsageHome({ onNotice }: { onNotice: No
   return <ScrollView contentContainerStyle={styles.settingsPage}>
 
 
-    <Text style={styles.collectionBody}>Counts are exact where your provider reports usage. Elsewhere they are length-based estimates, shown with ≈ and rounded, because a length heuristic sits within tens of percent of a real tokenizer. Exact and estimated counts are listed separately and never added together.</Text>
+    
     {failed
       ? <EmptyState title="Usage history could not be read" sentence={failureSentence} action={<Button label="Discard local usage history" accessibilityLabel="Discard local usage history" onPress={() => { void discardUsageHistory(); }} variant="critical" />} />
       : records === null
-        ? <EmptyState title="Reading usage history" sentence="Loading recorded provider calls from this device." />
+        ? <SkeletonGate active><View testID="usage-loading-skeleton">
+            <View style={styles.usageTotals}>{[0, 1].map(card => <View key={card} style={styles.usageTotalCard}>
+              <Skeleton style={styles.usageSkeletonLabel} />
+              <Skeleton style={styles.usageSkeletonValue} />
+              <Skeleton style={styles.usageSkeletonNote} />
+            </View>)}</View>
+            <View style={styles.usageList}>{[0, 1, 2, 3].map(row => <View key={row} style={styles.usageRow}>
+              <View style={styles.usageRowMain}><Skeleton style={styles.usageSkeletonRowTitle} /><Skeleton style={styles.usageSkeletonRowDetail} /></View>
+              <Skeleton style={styles.usageSkeletonRowValue} />
+            </View>)}</View>
+          </View></SkeletonGate>
         : <>
             <View style={styles.usageTotals}>
               {totalCard('Exact total', totals.exact, 'exact', 'Reported by the provider')}
               {totalCard('Estimated total', totals.estimated, 'estimated', 'Length-based, not reported')}
             </View>
+            <CopyButton
+              text={[
+                `Exact total: ${formatTokenCount(totals.exact, 'exact')}`,
+                `Estimated total: ${formatTokenCount(totals.estimated, 'estimated')}`,
+                `Provider calls: ${totals.callCount}`,
+                `Models: ${byModel.length}`,
+              ].join('\n')}
+              label="Copy totals"
+              subject="the usage totals"
+            />
             <Text style={styles.usageFootnote}>{totals.callCount} provider {totals.callCount === 1 ? 'call' : 'calls'} recorded across {byModel.length} {byModel.length === 1 ? 'model' : 'models'}. Image generation calls are not counted because image endpoints report no token usage.</Text>
             {summary && summary.rows > 0 ? <Text style={styles.usageFootnote}>Retained history: {summary.rows} older {summary.rows === 1 ? 'call' : 'calls'} kept in the totals, {formatTokenCount(summary.exact, 'exact')} exact and {formatTokenCount(summary.estimated, 'estimated')} estimated.</Text> : null}
             {recent.length
@@ -96,13 +116,12 @@ const UsageHomeImpl = React.memo(function UsageHome({ onNotice }: { onNotice: No
                     <Text style={[styles.usageRowValue, row.basis === 'estimated' && styles.usageValueEstimated]} accessibilityLabel={`${row.basis === 'exact' ? 'Exact' : 'Estimated'} ${formatTokenCount(row.totalTokens, row.basis)}`}>{formatTokenCount(row.totalTokens, row.basis)}</Text>
                   </View>)}</View>
                 </>
-              : <EmptyState title="No provider calls recorded yet" sentence="Plan a run and start a coordinated team. Each planner, builder, and reviewer call is recorded here as it happens." />}
+              : <EmptyState title="No provider calls recorded yet" />}
             <Button label="Discard local usage history" accessibilityLabel="Discard local usage history" onPress={() => setDiscardOpen(true)} variant="ghost" />
           </>}
     <ConfirmDialog
       visible={discardOpen}
       title="Discard the local usage history?"
-      body="Every recorded provider call on this device is removed, including the totals already folded into the retained history. This cannot be undone."
       confirmLabel="Discard usage history"
       onConfirm={() => { void discardUsageHistory(); }}
       onCancel={() => setDiscardOpen(false)}

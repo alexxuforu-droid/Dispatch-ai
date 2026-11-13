@@ -11,8 +11,7 @@ const SidebarImpl = React.memo(function Sidebar({ screen, setScreen, compact, on
   let group = '';
   return <View style={[styles.sidebar, compact && styles.sidebarCompact]}>
     <View style={[styles.brand, compact && styles.brandCompact]}>
-      <Image source={require('../../../../assets/dispatch-mark.png')} resizeMode="contain" style={styles.brandMark} />
-      {!compact && <View><Text style={styles.brandName}>Dispatch</Text><Text style={styles.brandCaption}>AI workspace</Text></View>}
+      <Image source={require('../../../../assets/dispatch-mark.png')} resizeMode="contain" style={styles.brandMark} accessibilityLabel="Dispatch AI" />
     </View>
     <FocusPressable accessibilityRole="button" accessibilityLabel="New run" accessibilityHint="Start a new run" tooltip={compact ? 'New run' : undefined} onPress={onNew} style={({ pressed }) => [styles.newRun, pressed && styles.pressed]}>
       <DispatchIcon name="plus" size={18} color={colors.text} />{!compact && <Text style={styles.newRunText}>New run</Text>}
@@ -31,7 +30,7 @@ const SidebarImpl = React.memo(function Sidebar({ screen, setScreen, compact, on
       <NavItem label="Advanced settings" icon="settings" active={screen === 'settings'} compact={compact} onPress={() => setScreen('settings')} />
       {/* Not a profile. It says where the run history lives, and it says nothing else. */}
       {!compact ? <View style={styles.profile}>
-        <View style={styles.flexOne}><Text style={styles.profileName}>Local workspace</Text><Text style={styles.profileCaption}>Run history stays on this device</Text></View>
+        <View style={styles.flexOne}><Text style={styles.profileName}>Local workspace</Text></View>
       </View> : null}
     </View>
   </View>;

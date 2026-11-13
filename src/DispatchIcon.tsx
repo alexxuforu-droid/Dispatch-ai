@@ -46,7 +46,10 @@ export type IconName =
   | 'studio'
   | 'folder'
   | 'shield'
-  | 'warning';
+  | 'warning'
+  | 'chat'
+  | 'infinity'
+  | 'copy';
 
 type Props = { name: IconName; size?: number; color?: string };
 
@@ -75,6 +78,9 @@ const masks: Record<IconName, ImageRequireSource> = {
   folder: require('../assets/icons/png/mask-folder.png'),
   shield: require('../assets/icons/png/mask-shield.png'),
   warning: require('../assets/icons/png/mask-alert-triangle.png'),
+  chat: require('../assets/icons/png/mask-message-circle.png'),
+  infinity: require('../assets/icons/png/mask-infinity.png'),
+  copy: require('../assets/icons/png/mask-copy.png'),
 };
 
 export function DispatchIcon({ name, size = 20, color = colors.textQuiet }: Props) {

@@ -5,7 +5,7 @@ import { diffLines } from './orchestration/diffLines';
 import { codeApplySecretBlock } from './orchestration/review';
 import { steerActiveRun } from './orchestration/model-runner';
 import { FocusPressable, isEscapeEvent, keyHandlerProps, useInitialFocus } from './Reveal';
-import { Button, Chip, EmptyState, Section, Toast } from './ui';
+import { Button, Chip, CopyButton, EmptyState, Section, Toast } from './ui';
 import { saveChangeAs, saveReportAs } from './exporter';
 import { relativeTime } from './relativeTime';
 import { colors, radius, space, type, typography } from './theme';
@@ -35,6 +35,17 @@ export function RunsInbox({ runs, selectedRun, busyRunId, onSelectRun, onOpenPla
   const active = selectedRun && runs.some(run => run.id === selectedRun.id) ? selectedRun : runs[0] ?? null;
   const [discardOpen, setDiscardOpen] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
+  // The list is the only way back to an old run, so it has to be findable. The search matches
+  // the name, the brief and what the agents said, because a person remembers any of the three.
+  const [query, setQuery] = useState('');
+  const visibleRuns = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return runs;
+    return runs.filter(run => {
+      const haystack = [run.mission?.name ?? '', run.brief, ...run.messages.map(message => message.text)].join(' ').toLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [query, runs]);
   // A history that cannot be read is still on the device, and it is still in the way. Moving it
   // aside is the repair: every run is copied under its own quarantine key first, so nothing the
   // person ran is destroyed, and the app gets a list it can work with again.
@@ -89,8 +100,17 @@ export function RunsInbox({ runs, selectedRun, busyRunId, onSelectRun, onOpenPla
   return <View style={styles.inbox}>
     <View style={styles.inboxList}>
       <View style={styles.inboxListHeader}><Text style={styles.inboxListTitle}>Recent runs</Text><Text style={styles.inboxListCount}>{runs.length}</Text></View>
+      <TextInput
+        accessibilityLabel="Search runs"
+        accessibilityHint="Type part of a run name, its brief or something an agent said."
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search runs"
+        placeholderTextColor={colors.textMuted}
+        style={styles.inboxSearch}
+      />
       <ScrollView style={styles.inboxListScroll} contentContainerStyle={styles.inboxListContent}>
-        {runs.map(run => {
+        {visibleRuns.length ? visibleRuns.map(run => {
           const latest = run.messages.at(-1);
           return <FocusPressable
             key={run.id}
@@ -107,7 +127,11 @@ export function RunsInbox({ runs, selectedRun, busyRunId, onSelectRun, onOpenPla
             <Text numberOfLines={1} style={styles.inboxRowPreview}>{latest?.text ?? run.brief}</Text>
             <View style={styles.inboxRowFoot}><Text style={styles.inboxRowStatus}>{run.status.replace('-', ' ')}</Text><Text style={styles.inboxRowMessages}>{run.messages.length} {run.messages.length === 1 ? 'message' : 'messages'}</Text></View>
           </FocusPressable>;
-        })}
+        }) : <EmptyState
+          title="No runs match"
+          sentence={`Nothing in the ${runs.length} saved ${runs.length === 1 ? 'run' : 'runs'} matches "${query.trim()}".`}
+          action={<Button label="Clear the search" onPress={() => setQuery('')} variant="ghost" />}
+        />}
       </ScrollView>
       <Button label="New run" onPress={onStartRun} variant="secondary" style={styles.inboxNewRun} />
       {historyActions}
@@ -692,7 +716,7 @@ export function ResultsStudio({ run, history, projectRoot, applyingChanges = [],
           </View>) : <Text style={styles.dim}>No findings were recorded for this run.</Text>}
         </Section>
 
-        <Section title="Run receipt" supporting="What was planned, and what happened.">
+        <Section title="Run receipt" supporting="What was planned, and what happened." action={<CopyButton text={activeRun.id} label="Copy run id" subject="the run id" />}>
           {activeRun.items.map(item => <Text key={item.id} style={styles.body}>
             {item.title} ({item.status}, {activeRun.agentProfiles?.find(agent => agent.id === item.agentId)?.name ?? item.agentId})
           </Text>)}
@@ -795,6 +819,18 @@ const styles = StyleSheet.create({
   inboxListTitle: { ...type.label, color: colors.text },
   inboxListCount: { ...type.meta, color: colors.textMuted },
   inboxListScroll: { flex: 1, minHeight: 0 },
+  inboxSearch: {
+    minHeight: 44,
+    marginHorizontal: space.sm,
+    marginBottom: space.sm,
+    paddingHorizontal: space.md,
+    borderRadius: radius.control,
+    borderWidth: 1,
+    borderColor: colors.lineStrong,
+    backgroundColor: colors.surfaceRaised,
+    color: colors.text,
+    ...type.bodySmall,
+  },
   inboxListContent: { gap: space.xs, paddingBottom: space.sm },
   inboxRow: { gap: space.xs, paddingHorizontal: space.md, paddingVertical: space.md, borderWidth: 1, borderColor: 'transparent', borderRadius: radius.control },
   inboxRowSelected: { backgroundColor: colors.surfaceActive, borderColor: colors.line },

@@ -5,6 +5,7 @@
 #include "DispatchNative.h"
 
 #include "AutolinkedNativeModules.g.h"
+#include "DispatchCapture.h"
 #include "DispatchVault.h"
 #include "DispatchWorkspace.h"
 
@@ -105,17 +106,20 @@ _Use_decl_annotations_ int CALLBACK WinMain(HINSTANCE instance, HINSTANCE, PSTR 
   // The floor is a property of the presenter, so it is set there: an OverlappedPresenter
   // refuses to shrink below its preferred minimum, which is what actually stops the window
   // being dragged narrower. Resize alone would only set the starting size.
-  auto applyFloor = [](winrt::Microsoft::UI::Windowing::AppWindow const &window) {
+  // The window is also frameless (no caption, no border) like the approved design; Windows 11
+  // still draws the rounded corners and the resize frame for a borderless AppWindow.
+  auto applyChrome = [](winrt::Microsoft::UI::Windowing::AppWindow const &window) {
     if (auto presenter = window.Presenter().try_as<winrt::Microsoft::UI::Windowing::OverlappedPresenter>()) {
+      presenter.SetBorderAndTitleBar(false, false);
       presenter.PreferredMinimumWidth(kMinWindowWidth);
       presenter.PreferredMinimumHeight(kMinWindowHeight);
     }
   };
   appWindow.SetPresenter(winrt::Microsoft::UI::Windowing::AppWindowPresenterKind::Overlapped);
-  applyFloor(appWindow);
+  applyChrome(appWindow);
   appWindow.Resize({1000, 1000});
-  appWindow.Changed([applyFloor](winrt::Microsoft::UI::Windowing::AppWindow const &window, winrt::Microsoft::UI::Windowing::AppWindowChangedEventArgs const &args) {
-    if (args.DidPresenterChange()) { applyFloor(window); }
+  appWindow.Changed([applyChrome](winrt::Microsoft::UI::Windowing::AppWindow const &window, winrt::Microsoft::UI::Windowing::AppWindowChangedEventArgs const &args) {
+    if (args.DidPresenterChange()) { applyChrome(window); }
   });
 
   // Get the ReactViewOptions so we can set the initial RN component to load

@@ -12,14 +12,14 @@ const RunInspectorImpl = React.memo(function RunInspector({ roles, agentModels, 
   return <View style={styles.inspector}>
     {showTitle ? <Text style={styles.inspectorTitle}>Run setup</Text> : null}
     <Section title="Agent team" action={<Button label={roles.length ? 'Edit' : 'Add'} onPress={onConfigure} variant="ghost" />}>
-      {!roles.length ? <EmptyState icon={<DispatchIcon name="team" size={20} color={colors.textQuiet} />} title="No team assigned" sentence="Choose agent roles to plan, build, and review this run." action={<Button label="Build a team" onPress={onConfigure} icon={<DispatchIcon name="plus" size={16} color={colors.text} />} />} />
+      {!roles.length ? <EmptyState icon={<DispatchIcon name="team" size={20} color={colors.textQuiet} />} title="No team assigned" action={<Button label="Build a team" onPress={onConfigure} icon={<DispatchIcon name="plus" size={16} color={colors.text} />} />} />
         : roles.map((role, index) => { const model = run?.agentModelIds ? run.agentModelIds[role.id] : agentModels[role.id]; const profile = run?.agentProfiles?.find(agent => agent.id === role.id); return <Row key={role.id} title={role.label} detail={providerReady ? model || 'Workspace default model' : 'Provider needed'} trailing={<AgentAvatar avatarId={profile?.avatarId ?? agentAvatars[role.id] ?? index + 1} size={30} name={profile?.name ?? role.label} />} />; })}
     </Section>
-    <Section title="Review policy" supporting="Each deliverable gets a separate review pass.">
-      <Toggle label="Code proposals" detail="An independent model reviews generated code. With it off, proposals stay staged for you." value={reviewCode} onChange={setReviewCode} />
-      <Toggle label="Automatic image review" detail="The configured model inspects generated image pixels. Uncertain results are held for you." value={reviewImages} onChange={setReviewImages} />
+    <Section title="Review policy">
+      <Toggle label="Code proposals" value={reviewCode} onChange={setReviewCode} />
+      <Toggle label="Automatic image review" value={reviewImages} onChange={setReviewImages} />
     </Section>
-    <View style={styles.inspectorNote}><DispatchIcon name="check" size={13} color={colors.textQuiet} /><Text style={styles.privacyText}>Nothing is applied until you approve it, or a qualified senior reviewer approves and applies it.</Text></View>
+    <View style={styles.inspectorNote}><DispatchIcon name="check" size={13} color={colors.textQuiet} /></View>
   </View>;
 });
 

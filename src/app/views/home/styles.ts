@@ -1,0 +1,31 @@
+import { StyleSheet } from 'react-native';
+import { colors, radius, space, type } from '../../../theme';
+
+export const homeStyles = StyleSheet.create({
+  dashGrid: { width: '100%', maxWidth: 940, alignSelf: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: space.md },
+  dashPage: { flex: 1 },
+  dashPageContent: { padding: space.section, paddingBottom: space.page },
+  dashPanels: { width: '100%', maxWidth: 940, alignSelf: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: space.md, marginTop: space.md },
+  dashPanel: { flexGrow: 1, flexBasis: 300, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  dashPanelBody: { color: colors.textQuiet, ...type.bodySmall, marginTop: space.xs },
+  dashPanelEmpty: { alignItems: 'flex-start', gap: space.md, paddingVertical: space.sm },
+  dashPanelTitle: { color: colors.text, ...type.section },
+  dashWaiting: { width: '100%', maxWidth: 940, alignSelf: 'center', marginTop: space.md, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  dashWaitingHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md },
+  dashWaitingRow: { minHeight: 44, justifyContent: 'center', borderTopWidth: 1, borderTopColor: colors.line, marginTop: space.sm, paddingTop: space.sm },
+  dashWaitingTitle: { color: colors.text, ...type.bodySmall, fontWeight: '600' },
+  eyebrow: { ...type.meta, color: colors.textMuted, fontWeight: '700', letterSpacing: 0.6 },
+  statCard: { flexGrow: 1, flexBasis: 130, minHeight: 96, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  statLabel: { ...type.meta, color: colors.textMuted, fontWeight: '600' },
+  statValue: { ...type.title, color: colors.text, marginTop: space.sm },
+  welcome: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: space.section },
+  welcomeBody: { width: '100%', maxWidth: 800, alignItems: 'center' },
+  welcomeMark: { width: 56, height: 56, borderRadius: radius.control, marginBottom: space.md },
+  welcomeSteps: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md, marginTop: space.xl, marginBottom: space.xl },
+  welcomeStep: { flexGrow: 1, flexBasis: 200, padding: space.lg, borderRadius: radius.card, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+  welcomeStepN: { ...type.meta, color: colors.lead, fontWeight: '700' },
+  welcomeStepT: { ...type.section, color: colors.text, marginTop: space.xs },
+  welcomeStepD: { ...type.bodySmall, color: colors.textQuiet, marginTop: space.sm },
+  welcomeSub: { ...type.body, color: colors.textQuiet, marginTop: space.sm, textAlign: 'center' },
+  welcomeTitle: { ...type.hero, color: colors.text, letterSpacing: -0.5, textAlign: 'center' },
+});

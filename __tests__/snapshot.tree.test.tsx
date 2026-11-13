@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import renderer, { ReactTestRenderer } from 'react-test-renderer';
 
 import { MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT } from '../src/layoutFloor';
-import { COMPACT_WIDTH } from '../src/app/types';
+import { COMPACT_WIDTH, DOCKED_INSPECTOR_WIDTH } from '../src/app/types';
 
 // Dev-only tree dumper. Uses require() rather than a node-typed import so the repo stays
 // free of an @types/node dependency just to render a snapshot. No local declaration of
@@ -53,7 +53,7 @@ async function snapshot(name: string, element: React.ReactElement): Promise<stri
   return json;
 }
 
-const SCREENS = ['dispatch', 'teams', 'agents', 'runs', 'reviews', 'artifacts', 'board', 'workflows', 'plugins', 'design', 'settings'] as const;
+const SCREENS = ['home', 'dashboard', 'dispatch', 'teams', 'agents', 'chat', 'runs', 'reviews', 'artifacts', 'board', 'workflows', 'plugins', 'design', 'settings'] as const;
 
 test('capture every screen at desktop width', async () => {
   setViewport(1440, 900);
@@ -86,7 +86,7 @@ test('capture the usage screen empty', async () => {
   // The page name lives in the top bar now, and the sentence under it says what the page
   // is for.
   expect(json).toContain('Usage');
-  expect(json).toContain('never added together');
+  expect(json).toContain('Estimated total');
 }, 60000);
 
 // Seeded through the real ledger write path, not injected into storage, so the capture
@@ -263,56 +263,53 @@ function controlsOpeningRunSetup(tree: ReactTestRenderer): any[] {
   return found;
 }
 
-// The desktop counterpart of the 320px concern, stated against the compact threshold we actually
-// enforce. Every width at or above COMPACT_WIDTH shows the inspector inline; only widths below it
-// (including the 900px shipping floor) show the composer instead, with run setup reachable by the
-// labelled button press below.
+// The desktop counterpart of the 320px concern, stated against the two thresholds the app
+// actually enforces. At the wide width the inspector has its own column beside the work; at
+// the compact and medium widths it is a panel, and the labelled button is how it is reached.
 test('the run inspector is reachable at every supported window width', async () => {
   const App = require('../App');
-  for (const width of [COMPACT_WIDTH, 1440]) {
+  setViewport(DOCKED_INSPECTOR_WIDTH, 900);
+  const wide = await snapshot('screen-dispatch-inspector-wide', React.createElement(App.default, { initialScreen: 'dispatch' }));
+  // Wide: the inspector's own sections are in the tree without anything being opened.
+  expect(wide).toContain('Run setup');
+  expect(wide).toContain('Agent team');
+  expect(wide).toContain('Review policy');
+  expect(wide).toContain('Review policy');
+  // Reachable means both survive together: the composer is still in the same tree, so a
+  // narrowed pane has not displaced it.
+  expect(wide).toContain('Describe a task for your agent team');
+
+  // Compact and medium: the inspector is a panel. A separate render per width, because the
+  // route is a press, not the layout.
+  for (const width of [320, COMPACT_WIDTH, DOCKED_INSPECTOR_WIDTH - 1]) {
     setViewport(width, 900);
-    const json = await snapshot(`screen-dispatch-inspector-${width}`, React.createElement(App.default, { initialScreen: 'dispatch' }));
-    // Rendered copy, not a boolean. The inspector's own sections must be in the tree.
-    expect(json).toContain('Run setup');
-    expect(json).toContain('Agent team');
-    expect(json).toContain('Review policy');
-    expect(json).toContain('Nothing is applied until you approve it');
-    // Reachable means both survive together: the composer is still in the same tree, so a
-    // narrowed pane has not displaced it.
-    expect(json).toContain('Describe a task for your agent team');
+    let tree!: ReactTestRenderer;
+    await act(async () => { tree = renderer.create(React.createElement(App.default, { initialScreen: 'dispatch' })); });
+
+    // Rendered sections, not a boolean, so a failure names the missing copy.
+    const controls = controlsOpeningRunSetup(tree);
+    if (controls.length !== 1) {
+      throw new Error(`expected exactly one button opening run setup at ${width}px, found ${controls.length}`);
+    }
+    const before = JSON.stringify(tree.toJSON());
+    expect(before).not.toContain('Review policy');
+
+    await act(async () => { pressHandler(controls[0])?.(); });
+
+    // The same sections and the same composer, still in the rendered state after the press.
+    const pressed = JSON.stringify(tree.toJSON());
+    expect(pressed).toContain('Run setup');
+    expect(pressed).toContain('Agent team');
+    expect(pressed).toContain('Review policy');
+    expect(pressed).toContain('Review policy');
+    expect(pressed).toContain('Describe a task for your agent team');
+    fs.writeFileSync(path.join(OUT_DIR, `screen-dispatch-inspector-${width}-open.json`), JSON.stringify(tree.toJSON(), null, 1), 'utf8');
+
+    await act(async () => { tree.unmount(); });
   }
-
-  // Below the floor there is no inline inspector to fall out of the tree, so the same sections
-  // must be reachable another way: a clearly labelled action that opens run setup. A separate
-  // render at 320 rather than a loop entry, because the route differs -- it is a press, not the
-  // layout. The dispatch tree is compact today, so this fails now with zero matches.
-  setViewport(320, 900);
-  let tree!: ReactTestRenderer;
-  await act(async () => { tree = renderer.create(React.createElement(App.default, { initialScreen: 'dispatch' })); });
-
-  // Rendered sections, not a boolean, so a failure names the missing copy.
-  const controls = controlsOpeningRunSetup(tree);
-  if (controls.length !== 1) {
-    throw new Error(`expected exactly one button opening run setup at 320px, found ${controls.length}`);
-  }
-  const before = JSON.stringify(tree.toJSON());
-  expect(before).not.toContain('Review policy');
-
-  await act(async () => { pressHandler(controls[0])?.(); });
-
-  // The same sections and the same composer, still in the rendered state after the press.
-  const pressed = JSON.stringify(tree.toJSON());
-  expect(pressed).toContain('Run setup');
-  expect(pressed).toContain('Agent team');
-  expect(pressed).toContain('Review policy');
-  expect(pressed).toContain('Nothing is applied until you approve it');
-  expect(pressed).toContain('Describe a task for your agent team');
-  fs.writeFileSync(path.join(OUT_DIR, 'screen-dispatch-inspector-320-open.json'), JSON.stringify(tree.toJSON(), null, 1), 'utf8');
-
-  await act(async () => { tree.unmount(); });
 }, 120000);
 
-test('narrow viewports actually change the tree', async () => {
+test('the three layouts are three different trees', async () => {
   // Self-contained on purpose. An earlier version read captures written by the tests above
   // it, so a filtered or isolated run silently compared stale artifacts from a prior run.
   const App = require('../App').default;
@@ -324,28 +321,22 @@ test('narrow viewports actually change the tree', async () => {
     await act(async () => { rendered.unmount(); });
     return json;
   };
-  const narrow = await capture(320);
-  const medium = await capture(900);
-  const desktop = await capture(1440);
+  const compact = await capture(320);
+  const medium = await capture(COMPACT_WIDTH);
+  const wide = await capture(1440);
 
-  // The compact trait itself, asserted on copy only `!compact` renders: workspace chrome that
-  // disappears when the pane narrows. Both 320 and 900 must have dropped it, which is what keeps
-  // this a compact-vs-desktop claim rather than an inspector-only one. The caption is sentence
-  // case now, because an uppercase letter-spaced label is a generated-interface mark.
-  expect(narrow).not.toContain('AI workspace');
-  expect(medium).not.toContain('AI workspace');
-  expect(desktop).toContain('AI workspace');
-  // ...and the desktop layout differs from both, so narrowing the window is doing real work.
-  expect(narrow).not.toEqual(desktop);
-  expect(medium).not.toEqual(desktop);
-
-  // The intentional responsive difference: both 320 and 900 sit below COMPACT_WIDTH (1040,
-  // src/app/types.ts:17), so neither carries the inline inspector; 1440 is above it and does.
-  // Two widths on the same side of the threshold, identical for a stated reason rather than
-  // incidentally; only the jump past 1040 changes the tree.
-  expect(narrow).not.toContain('Review policy');
+  // The compact trait itself: the sidebar folds to an icon rail, so the group headers are gone.
+  expect(compact).not.toContain('"Work"');
+  // The medium trait: the sidebar shows its group headers, but the inspector is still a panel.
+  expect(medium).toContain('"Work"');
+  expect(medium).toContain('Dispatch AI');
   expect(medium).not.toContain('Review policy');
-  expect(desktop).toContain('Review policy');
-  expect(narrow).toEqual(medium);
-  expect(narrow).not.toEqual(desktop);
+  // The wide trait: the labelled sidebar and the docked inspector together.
+  expect(wide).toContain('"Work"');
+  expect(wide).toContain('Review policy');
+
+  // ...and each width is doing real work, so no two of them are the same tree.
+  expect(compact).not.toEqual(medium);
+  expect(medium).not.toEqual(wide);
+  expect(compact).not.toEqual(wide);
 }, 60000);

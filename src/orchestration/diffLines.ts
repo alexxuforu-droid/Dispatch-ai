@@ -13,6 +13,38 @@ const MAX_DP_CELLS = 2_000_000;
 
 /** Line-level diff of two file contents. Pure: same inputs, same output, no I/O, no dependencies. */
 export function diffLines(before: string, after: string): DiffResult {
+  const ops = diffOps(before, after);
+
+  let added = 0;
+  let removed = 0;
+  ops.forEach(op => {
+    if (op.kind === 'add') added += 1;
+    if (op.kind === 'remove') removed += 1;
+  });
+  if (added === 0 && removed === 0) return { identical: true, added: 0, removed: 0, truncated: false, lines: [] };
+
+  const view = buildView(ops);
+  return { identical: false, added, removed, truncated: view.truncated, lines: view.lines };
+}
+
+/**
+ * The whole change as text, for pasting into a review or a commit message.
+ *
+ * This is the full diff, not the capped view the card renders: a pasted patch that silently
+ * stopped halfway would be worse than no patch at all.
+ */
+export function patchText(before: string, after: string): string {
+  const ops = diffOps(before, after);
+  if (!ops.some(op => op.kind === 'add' || op.kind === 'remove')) return '';
+  return ops.map(op => {
+    if (op.kind === 'add') return `+ ${op.text}`;
+    if (op.kind === 'remove') return `- ${op.text}`;
+    return `  ${op.text}`;
+  }).join('\n');
+}
+
+/** The diff operations for two file contents: context around each change, in order. */
+function diffOps(before: string, after: string): DiffLine[] {
   const oldLines = splitLines(before);
   const newLines = splitLines(after);
 
@@ -27,22 +59,11 @@ export function diffLines(before: string, after: string): DiffResult {
   // shifts every changed line after the first op, which is the common single-line-edit shape
   // and reads as a wrong line to review.
   const middle = diffMiddle(oldLines.slice(head, oldLines.length - tail), newLines.slice(head, newLines.length - tail), head);
-  const ops: DiffLine[] = [
+  return [
     ...oldLines.slice(0, head).slice(-CONTEXT_LINES).map((text, index, visible) => context(text, head - visible.length + index + 1, head - visible.length + index + 1)),
     ...middle,
     ...oldLines.slice(oldLines.length - tail).slice(0, CONTEXT_LINES).map((text, index) => context(text, oldLines.length - tail + index + 1, newLines.length - tail + index + 1)),
   ];
-
-  let added = 0;
-  let removed = 0;
-  ops.forEach(op => {
-    if (op.kind === 'add') added += 1;
-    if (op.kind === 'remove') removed += 1;
-  });
-  if (added === 0 && removed === 0) return { identical: true, added: 0, removed: 0, truncated: false, lines: [] };
-
-  const view = buildView(ops);
-  return { identical: false, added, removed, truncated: view.truncated, lines: view.lines };
 }
 
 /**

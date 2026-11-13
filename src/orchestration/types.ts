@@ -11,6 +11,30 @@ export type CodeChange = { id: string; itemId: string; path: string; before: str
 export type DesignAnnotation = { id: string; x: number; y: number; note: string };
 export type RunMission = { id: string; name: string; output: 'image' | 'code' | 'mixed' };
 /**
+ * The provider one agent brings to the team.
+ *
+ * Every field is optional in effect: an empty endpoint, model or image model means "use the
+ * workspace one", and `ownKey` false means the agent borrows the workspace key. When it is
+ * true the key itself lives in Windows Credential Manager under this agent's own slot, so it
+ * is never written to app storage and never travels with a saved run.
+ */
+export type AgentProvider = { endpoint: string; model: string; imageModel: string; ownKey: boolean };
+/**
+ * What an agent does when there is nothing to do.
+ *
+ * `anything` is the free choice: the agent picks what to make, and it does not pick the same
+ * thing twice in a row. The other four pin it to one kind of work.
+ */
+export type IdleBehaviour = 'anything' | 'tool' | 'picture' | 'report' | 'game';
+/**
+ * How one agent works on its own.
+ *
+ * The folder is where the agent keeps everything it makes. It is empty when the agent has no
+ * folder of its own, which means the shared default folder is used. The idle behaviour is what
+ * the agent does when there is nothing to do.
+ */
+export type AgentSetup = { folder: string; idle: IdleBehaviour };
+/**
  * The execution policy a run was created under.
  *
  * A run already snapshots the team, the playbook, the agent profiles and the model ids, but the
@@ -27,7 +51,7 @@ export type RunPolicy = {
   reviewImages: boolean;
   maxConcurrency: number;
 };
-export type Run = { id: string; brief: string; status: RunStatus; teamId: string; mission?: RunMission; designReferenceUri?: string; designReferenceMime?: string; designAnnotations?: DesignAnnotation[]; steeringNotes?: string[]; teamPlaybook?: string; checkpointPolicy?: CheckpointPolicy; checkpointPaused?: boolean; policy?: RunPolicy; agentModelIds?: Record<string, string>; agentProfiles?: Agent[]; items: WorkItem[]; messages: AgentMessage[]; artifacts: Artifact[]; changes?: CodeChange[]; recoveredAt?: string; createdAt: string; updatedAt: string };
+export type Run = { id: string; brief: string; status: RunStatus; teamId: string; mission?: RunMission; designReferenceUri?: string; designReferenceMime?: string; designAnnotations?: DesignAnnotation[]; steeringNotes?: string[]; teamPlaybook?: string; checkpointPolicy?: CheckpointPolicy; checkpointPaused?: boolean; policy?: RunPolicy; agentModelIds?: Record<string, string>; agentProfiles?: Agent[]; /** The folder the run was created against. The always-on worker runs in its own folder, and the files it stages are applied there. */ projectRoot?: string; items: WorkItem[]; messages: AgentMessage[]; artifacts: Artifact[]; changes?: CodeChange[]; recoveredAt?: string; createdAt: string; updatedAt: string };
 export type RunEvent = { seq: number; runId: string; at: string; type: 'run.created' | 'run.status' | 'work.ready' | 'work.started' | 'work.finished' | 'agent.message' | 'artifact.created' | 'code-change.proposed' | 'review.finding' | 'review.verdict' | 'approval.required' | 'human.decision'; payload: unknown };
-export type Agent = { id: string; name: string; role: string; modelId?: string; avatarId?: number; rank: number; kinds: WorkKind[]; instructions: string; memory?: string; permissions: AgentPermissions };
+export type Agent = { id: string; name: string; role: string; modelId?: string; avatarId?: number; rank: number; kinds: WorkKind[]; instructions: string; memory?: string; permissions: AgentPermissions; provider?: AgentProvider };
 export type Team = { id: string; name: string; agents: Agent[]; playbook?: string; debate?: boolean };

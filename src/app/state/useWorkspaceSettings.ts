@@ -8,7 +8,7 @@ import {
   loadWorkspaceSettingsResult,
   saveWorkspaceSettings,
 } from '../../persistence/workspace';
-import { AgentPermissions, CheckpointPolicy } from '../../orchestration/types';
+import { AgentPermissions, AgentProvider, AgentSetup, CheckpointPolicy } from '../../orchestration/types';
 import { NoticeReporter } from '../controllers/types';
 import { Role, SavedTeam, templates } from '../types';
 
@@ -152,6 +152,7 @@ export function useWorkspaceSettings(onNotice: NoticeReporter) {
   const setCheckpointPolicy = useCallback((value: CheckpointPolicy) => patch({ checkpointPolicy: value }), [patch]);
   const setMaxConcurrency = useCallback((value: number) => patch({ maxConcurrency: value }), [patch]);
   const setPeerApprovalEnabled = useCallback((value: boolean) => patch({ peerApprovalEnabled: value }), [patch]);
+  const setRequirePlanApproval = useCallback((value: boolean) => patch({ requirePlanApproval: value }), [patch]);
   const setAgentModel = useCallback((id: string, value: string) => {
     patch(current => ({ agentModels: { ...current.agentModels, [id]: value } }));
   }, [patch]);
@@ -167,6 +168,29 @@ export function useWorkspaceSettings(onNotice: NoticeReporter) {
   const setAgentPermission = useCallback((id: string, key: keyof AgentPermissions, value: boolean) => {
     patch(current => ({ agentPermissions: { ...current.agentPermissions, [id]: { ...(current.agentPermissions[id] ?? defaultAgentPermissions), [key]: value } } }));
   }, [patch]);
+  // The provider an agent brings. An agent with nothing of its own is removed from the map
+  // rather than saved empty, so "no provider of its own" stays one answer in the file.
+  const setAgentProvider = useCallback((id: string, provider: AgentProvider | undefined) => {
+    patch(current => {
+      const next = { ...current.agentProviders };
+      if (!provider || (!provider.endpoint.trim() && !provider.model.trim() && !provider.imageModel.trim() && !provider.ownKey)) delete next[id];
+      else next[id] = provider;
+      return { agentProviders: next };
+    });
+  }, [patch]);
+  // How one agent works on its own: the folder it keeps its work in, and what it makes when
+  // there is nothing to do. An agent with nothing of its own is removed from the map, so
+  // "no setting" stays one answer in the file.
+  const setAgentSetup = useCallback((id: string, setup: AgentSetup | undefined) => {
+    patch(current => {
+      const next = { ...current.agentSetups };
+      if (!setup || (!setup.folder.trim() && setup.idle === 'anything')) delete next[id];
+      else next[id] = setup;
+      return { agentSetups: next };
+    });
+  }, [patch]);
+  const setAlwaysOn = useCallback((value: boolean) => patch({ alwaysOn: value }), [patch]);  const setAlwaysOnAgentId = useCallback((value: string) => patch({ alwaysOnAgentId: value }), [patch]);
+  const setAlwaysOnMinutes = useCallback((value: number) => patch({ alwaysOnMinutes: value }), [patch]);
 
   // A member leaves the team from the team card, without the editor. A team with no members
   // cannot plan anything, so that is refused with the reason.
@@ -205,6 +229,16 @@ export function useWorkspaceSettings(onNotice: NoticeReporter) {
     setAgentRank,
     agentMemory: settings.agentMemory,
     setAgentMemory,
+    agentProviders: settings.agentProviders,
+    setAgentProvider,
+    agentSetups: settings.agentSetups,
+    setAgentSetup,
+    alwaysOn: settings.alwaysOn,
+    setAlwaysOn,
+    alwaysOnAgentId: settings.alwaysOnAgentId,
+    setAlwaysOnAgentId,
+    alwaysOnMinutes: settings.alwaysOnMinutes,
+    setAlwaysOnMinutes,
     plugins: settings.plugins,
     setPlugins,
     workflows: settings.workflows,
@@ -217,6 +251,8 @@ export function useWorkspaceSettings(onNotice: NoticeReporter) {
     setMaxConcurrency,
     peerApprovalEnabled: settings.peerApprovalEnabled,
     setPeerApprovalEnabled,
+    requirePlanApproval: settings.requirePlanApproval,
+    setRequirePlanApproval,
     reviewCode: settings.automaticCodeReview,
     setReviewCode,
     reviewImages: settings.automaticImageReview,

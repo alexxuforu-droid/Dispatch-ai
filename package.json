@@ -12,10 +12,11 @@
     "codegen": "node node_modules/@react-native-windows/codegen/bin.js --files \"src/**/*Native*.[jt]s\" --modulesWindows --namespace dispatchCodegen --libraryName DispatchNativeSpec --separateDataTypes --outputDirectory windows/DispatchNative/codegen",
     "codegen:check": "npm run codegen -- --test",
     "verify": "tsc --noEmit && npm run codegen:check && eslint . --max-warnings=0 && jest --ci && npm run test:windows",
-    "windows": "npx @react-native-community/cli run-windows",
+    "windows": "npx @react-native-community/cli run-windows --msbuildprops WindowsTargetPlatformVersion=10.0.26100.0,TargetPlatformVersion=10.0.26100.0,PlatformToolset=v145",
     "test:windows": "jest --config jest.config.windows.js",
     "assets:build": "node scripts/render-logo.mjs",
-    "avatars:build": "node scripts/build-agent-avatars.mjs"
+    "avatars:build": "node scripts/build-agent-avatars.mjs",
+    "postinstall": "node scripts/fix-rnw-vswhere.mjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
