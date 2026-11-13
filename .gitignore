@@ -94,3 +94,8 @@ windows/**/Packages/
 *.msixbundle
 *.appxbundle
 *.msixupload
+
+# local scratch and agent tooling state
+.scratch/
+.megamemory/
+.claude/
