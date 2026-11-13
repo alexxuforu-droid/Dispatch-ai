@@ -1,4 +1,0 @@
-[
-  "(async () => { const t = Date.now(); await new Promise(r => setTimeout(r, 300)); return 'elapsed ' + (Date.now() - t); })()",
-  "(() => 'sync value: ' + Date.now())()"
-]
